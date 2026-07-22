@@ -48,7 +48,14 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-5-20250929")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-mongo_url = os.environ["MONGO_URL"]
+mongo_url = os.environ["MONGO_URL"].strip().strip('"').strip("'")
+if not (mongo_url.startswith("mongodb://") or mongo_url.startswith("mongodb+srv://")):
+    raise RuntimeError(
+        f"MONGO_URL must start with 'mongodb://' or 'mongodb+srv://'. "
+        f"Got: {mongo_url[:30]!r}... "
+        f"Check your environment variable — for MongoDB Atlas it should look like "
+        f"'mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority'"
+    )
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
