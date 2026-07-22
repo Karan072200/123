@@ -28,10 +28,13 @@ Translation: An app to track: money coming in, money going out, whom I need to r
 - Auth: Register, Login, Logout, Me, Currency update
 - Accounts CRUD with live balance calculation
 - Transactions CRUD with type/account/search filters
+- **Edit Transaction** via pencil icon (reuses shared dialog)
+- **Recurring Transactions**: daily/weekly/monthly rules with active toggle, "Run now", auto-generation on dashboard load
+- **Budget Goals per category**: monthly limit with live spent/remaining/percent, green→yellow→red progress bar
 - Udhaar (Lene/Dene) tracker with settle, delete, WhatsApp/clipboard reminder
 - Dashboard with 4 stat cards, recent txns, account list
 - Reports: Bar chart (income vs expense), Line chart (savings), Pie chart (categories), Account type breakdown
-- AI Insights via Claude Sonnet 4.5 with JSON output (headline, summary, 3-5 tips) — Hinglish
+- AI Insights via Claude Sonnet 4.5 with JSON output (headline, summary, 3-5 tips) — Hinglish + deterministic fallback
 - Multi-currency (5 currencies)
 - Sidebar layout with mobile top-nav
 
@@ -40,14 +43,15 @@ Translation: An app to track: money coming in, money going out, whom I need to r
 - Small business owner tracking multiple accounts + udhaar
 
 ## Backlog / Next Iterations
-- P1: Edit transaction dialog (currently delete + re-add)
-- P1: Account-to-account transfer
-- P1: Recurring transactions
-- P2: Export CSV/PDF monthly report
-- P2: SMS/email reminder scheduler for udhaar due dates
-- P2: Budget goals per category
+- P1: Family / Shared Ledger (shared workspace with per-member breakdown)
+- P1: Bill reminders (email/WhatsApp on due dates)
+- P2: Photo/receipt attachments on transactions
+- P2: Multi-currency with live FX rates
+- P2: CSV/PDF export of monthly report
+- P2: SMS/UPI parsing to auto-create transactions
+- P2: Voice input ("add 500 rupees chai")
+- P2: Weekly AI digest via WhatsApp/email
 - P2: Dark mode toggle
-- P2: Family/shared accounts
 
 ## Next Action Items
 - Verify testing subagent report
