@@ -21,7 +21,7 @@ export default function Landing() {
           <div className="w-9 h-9 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
             <Wallet className="w-5 h-5 text-white" />
           </div>
-          <span className="font-heading text-xl font-bold text-[#1C1917]">PaisaBook</span>
+          <span className="font-heading text-xl font-bold text-[#1C1917]">Apka Munim</span>
         </div>
         <div className="flex items-center gap-3">
           <Link to="/login" data-testid="nav-login-link">
@@ -47,7 +47,7 @@ export default function Landing() {
           </h1>
           <p className="mt-5 text-base sm:text-lg text-[#57534E] leading-relaxed max-w-lg">
             Kitne paise aaye, kitne gaye, kisse lene hain, kisko dene hain — sab ek jagah.
-            Savings, Current, Cash — sabka hisaab PaisaBook mein.
+            Savings, Current, Cash — sabka hisaab Apka Munim mein.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link to="/register" data-testid="hero-cta-register">

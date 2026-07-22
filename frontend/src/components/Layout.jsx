@@ -101,7 +101,7 @@ export default function Layout({ children }) {
             <div className="w-9 h-9 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
               <Wallet className="w-5 h-5 text-white" />
             </div>
-            <span className="font-heading text-xl font-bold text-[#1C1917]">PaisaBook</span>
+            <span className="font-heading text-xl font-bold text-[#1C1917]">Apka Munim</span>
           </div>
           <button
             onClick={toggleTheme}
@@ -163,7 +163,7 @@ export default function Layout({ children }) {
             <div className="w-8 h-8 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
               <Wallet className="w-4 h-4 text-white" />
             </div>
-            <span className="font-heading text-lg font-bold text-[#1C1917]">PaisaBook</span>
+            <span className="font-heading text-lg font-bold text-[#1C1917]">Apka Munim</span>
           </div>
           <div className="flex items-center gap-1">
             <button onClick={toggleTheme} data-testid="mobile-theme-toggle"

@@ -83,7 +83,7 @@ export default function InstallPrompt() {
             </div>
             <div className="min-w-0">
               <div className="font-heading font-semibold text-[#1C1917] text-sm">
-                PaisaBook ko app ki tarah install karo
+                Apka Munim ko app ki tarah install karo
               </div>
               <div className="text-xs text-[#57534E] mt-0.5">
                 Home screen pe icon, full-screen, tez access — bilkul app jaisa feel.

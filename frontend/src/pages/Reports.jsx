@@ -116,7 +116,7 @@ export default function Reports() {
               <Sparkles className="w-5 h-5 text-[#8B6220]" />
             </div>
             <div>
-              <h2 className="font-heading text-lg font-semibold text-[#1C1917]">PaisaBuddy AI Coach</h2>
+              <h2 className="font-heading text-lg font-semibold text-[#1C1917]">Munim Ji AI Coach</h2>
               <p className="text-xs text-[#78716C]">Aapke data ke basis pe smart Hinglish insights.</p>
             </div>
           </div>

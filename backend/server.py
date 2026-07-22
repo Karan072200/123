@@ -32,7 +32,7 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-app = FastAPI(title="PaisaBook API")
+app = FastAPI(title="Apka Munim API")
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
@@ -555,6 +555,209 @@ async def delete_udhaar(udhaar_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+# ----- SMS / UPI Parser -----
+import re
+
+CATEGORY_KEYWORDS = {
+    "Food": ["zomato", "swiggy", "dominos", "domino", "pizza", "mcd", "mcdonald", "kfc",
+             "burger", "starbucks", "cafe", "restaurant", "food", "eatsure", "eazydiner"],
+    "Groceries": ["bigbasket", "blinkit", "zepto", "instamart", "grofers", "dmart",
+                  "reliance fresh", "grocery", "kirana"],
+    "Transport": ["uber", "ola", "rapido", "yulu", "namma metro", "irctc", "railway",
+                  "petrol", "hpcl", "iocl", "bpcl", "indianoil", "fastag", "metro"],
+    "Shopping": ["amazon", "flipkart", "myntra", "ajio", "meesho", "nykaa", "tatacliq",
+                 "shoppers stop", "reliance trends", "croma"],
+    "Bills": ["airtel", "jio", "vi ", "vodafone", "electricity", "bescom", "msedcl",
+              "adani electricity", "torrent power", "gas bill", "mahanagar gas", "igl",
+              "water bill", "broadband", "act fibernet", "recharge", "postpaid", "dth"],
+    "Entertainment": ["netflix", "hotstar", "prime video", "amazon prime", "spotify",
+                      "youtube premium", "sonyliv", "bookmyshow", "pvr", "inox"],
+    "Health": ["pharmeasy", "netmeds", "1mg", "apollo", "practo", "medlife", "hospital",
+               "clinic", "pharmacy", "medicine"],
+    "Education": ["byju", "unacademy", "vedantu", "coursera", "udemy", "school", "college",
+                  "fees"],
+    "Travel": ["makemytrip", "goibibo", "yatra", "irctc", "airbnb", "oyo", "cleartrip",
+               "ixigo", "indigo", "vistara", "spicejet", "airindia"],
+    "Rent": ["rent"],
+    "Salary": ["salary", "sal cr", "salary credit"],
+    "Business": ["invoice", "payment received", "business"],
+    "Freelance": ["upwork", "fiverr", "freelance"],
+    "Investment": ["mutual fund", "sip", "zerodha", "groww", "kite", "coin", "smallcase"],
+    "Gift": ["gift"],
+}
+
+
+def _guess_category(text: str, txn_type: str) -> str:
+    t = text.lower()
+    for cat, kws in CATEGORY_KEYWORDS.items():
+        for kw in kws:
+            if kw in t:
+                if txn_type == "income" and cat not in ("Salary", "Business", "Freelance", "Investment", "Gift"):
+                    continue
+                if txn_type == "expense" and cat in ("Salary", "Business", "Freelance", "Investment", "Gift"):
+                    continue
+                return cat
+    return "Other Income" if txn_type == "income" else "Other"
+
+
+def _detect_type(text: str) -> Optional[str]:
+    t = text.lower()
+    debit_words = ["debited", "debit", "paid", "sent", "deducted", "withdrawn", "spent", "purchase"]
+    credit_words = ["credited", "credit", "received", "deposited", "refund", "salary"]
+    d = any(w in t for w in debit_words)
+    c = any(w in t for w in credit_words)
+    if d and not c:
+        return "expense"
+    if c and not d:
+        return "income"
+    if d:
+        return "expense"
+    if c:
+        return "income"
+    return None
+
+
+def _extract_merchant(text: str) -> Optional[str]:
+    """Try multiple patterns; pick most specific."""
+    patterns = [
+        r"UPI[/\-]([A-Za-z][A-Za-z0-9 &.\-]{2,40}?)(?:/|\s+on\s|\s+ref|\.|$)",
+        r"paid to\s+([A-Za-z][A-Za-z0-9 &.\-]{2,40}?)(?:\s+via|\s+on|\.|,|$)",
+        r"to\s+([a-zA-Z][a-zA-Z0-9._\-]{2,40})@[a-zA-Z]+",
+        r"received from\s+([A-Za-z][A-Za-z0-9 &.\-]{2,40}?)(?:\s+on|\.|,|$)",
+        r"at\s+([A-Z][A-Za-z0-9 &.\-]{2,40}?)(?:\s+on|\.|,|$)",
+    ]
+    skip = {"your", "the", "a/c", "salary", "credit", "debit", "customer", "account", "hdfc", "sbi", "icici", "axis", "kotak"}
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            name = m.group(1).strip().rstrip(".,/-").strip()
+            if name and name.lower() not in skip and len(name) >= 2:
+                return name[:40]
+    return None
+
+
+AMOUNT_RE = re.compile(
+    r"(?:rs\.?|inr|rupees|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+    re.IGNORECASE,
+)
+ACC_LAST4_RE = re.compile(r"a/?c[^0-9]*([0-9]{4})", re.IGNORECASE)
+XX_LAST4_RE = re.compile(r"x{2,}(\d{4})", re.IGNORECASE)
+
+
+def parse_sms_regex(text: str) -> dict:
+    result = {
+        "type": None, "amount": None, "merchant": None,
+        "account_last4": None, "raw": text.strip(),
+        "confidence": 0.0,
+    }
+    if not text or len(text) < 8:
+        return result
+
+    m = AMOUNT_RE.search(text)
+    if m:
+        try:
+            result["amount"] = float(m.group(1).replace(",", "").replace(" ", ""))
+            result["confidence"] += 0.4
+        except Exception:
+            pass
+
+    result["type"] = _detect_type(text)
+    if result["type"]:
+        result["confidence"] += 0.3
+
+    m = ACC_LAST4_RE.search(text) or XX_LAST4_RE.search(text)
+    if m:
+        result["account_last4"] = m.group(1)
+        result["confidence"] += 0.15
+
+    merchant = _extract_merchant(text)
+    if merchant:
+        result["merchant"] = merchant
+        result["confidence"] += 0.15
+    return result
+
+
+class SmsParseIn(BaseModel):
+    text: str
+
+
+@api.post("/sms/parse")
+async def parse_sms(body: SmsParseIn, user=Depends(get_current_user)):
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty SMS")
+
+    parsed = parse_sms_regex(text)
+
+    # match account by last-4 digits in name
+    account = None
+    if parsed["account_last4"]:
+        accs = await db.accounts.find(scope(user), {"_id": 0}).to_list(500)
+        for a in accs:
+            if parsed["account_last4"] in (a.get("name", "") + " " + a.get("note", "")):
+                account = a
+                break
+
+    if not account:
+        accs = await db.accounts.find(scope(user), {"_id": 0}).to_list(1)
+        account = accs[0] if accs else None
+
+    # If we couldn't extract essentials via regex, ask the LLM as a fallback
+    llm_used = False
+    if parsed["confidence"] < 0.5 or parsed["amount"] is None or not parsed["type"]:
+        try:
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"sms-{user['id']}",
+                system_message=(
+                    "You are an Indian bank/UPI SMS parser. Given raw SMS text, extract structured JSON. "
+                    "Return ONLY a JSON object with keys: type ('income' or 'expense'), amount (number), "
+                    "merchant (string, empty if unknown), account_last4 (4-digit string or empty). "
+                    "No markdown, no code fences, JSON only."
+                ),
+            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+            msg = UserMessage(text=f"Parse this SMS: {text}")
+            raw = await chat.send_message(msg)
+            import json
+            s = raw.strip()
+            if s.startswith("```"):
+                s = s.strip("`")
+                if s.lower().startswith("json"):
+                    s = s[4:].strip()
+            i, j = s.find("{"), s.rfind("}")
+            if i != -1 and j != -1:
+                data = json.loads(s[i:j + 1])
+                if not parsed["amount"] and data.get("amount"):
+                    parsed["amount"] = float(data["amount"])
+                if not parsed["type"] and data.get("type"):
+                    parsed["type"] = data["type"]
+                if not parsed["merchant"] and data.get("merchant"):
+                    parsed["merchant"] = data["merchant"]
+                if not parsed["account_last4"] and data.get("account_last4"):
+                    parsed["account_last4"] = data["account_last4"]
+                parsed["confidence"] = max(parsed["confidence"], 0.75)
+                llm_used = True
+        except Exception as e:
+            logger.warning("SMS LLM fallback failed: %s", e)
+
+    txn_type = parsed["type"] or "expense"
+    category = _guess_category(text, txn_type)
+
+    return {
+        "type": txn_type,
+        "amount": parsed["amount"] or 0.0,
+        "merchant": parsed["merchant"] or "",
+        "account_last4": parsed["account_last4"] or "",
+        "suggested_account_id": account["id"] if account else None,
+        "suggested_account_name": account["name"] if account else None,
+        "category": category,
+        "note": (parsed["merchant"] or "SMS") + (f" · ...{parsed['account_last4']}" if parsed["account_last4"] else ""),
+        "confidence": round(parsed["confidence"], 2),
+        "llm_used": llm_used,
+        "raw": text,
+    }
+
+
 # ----- Recurring -----
 def _next_due(from_dt: datetime, frequency: str, day_of_month: Optional[int]) -> datetime:
     if frequency == "daily":
@@ -798,14 +1001,14 @@ async def ai_insights(user=Depends(get_current_user)):
             "tips": [
                 "Pehle apne primary Savings aur Current accounts add karo.",
                 "Har chhoti-badi kharcha turant record karo — habit ban jayegi.",
-                "Udhaar lene/dene bhi PaisaBook mein daalte raho.",
+                "Udhaar lene/dene bhi Apka Munim mein daalte raho.",
             ],
         }
 
     context = {"currency": currency, "summary": summary, "monthly_trend": monthly}
 
     system_msg = (
-        "You are a friendly Indian personal finance coach called 'PaisaBuddy'. "
+        "You are a friendly Indian personal finance coach called 'Munim Ji'. "
         "Speak in warm Hinglish (Hindi + English mix). Be concise, practical and non-judgmental. "
         "Return ONLY a JSON object with keys: headline (string, max 90 chars), "
         "summary (string, 2-3 sentences), tips (array of 3-5 short actionable tips). "
@@ -848,7 +1051,7 @@ async def ai_insights(user=Depends(get_current_user)):
             tips.append(f"Logon se {currency} {summary['udhaar_lene']} lena hai — reminder bhej do.")
         if summary["udhaar_dene"] > 0:
             tips.append(f"Aapko {currency} {summary['udhaar_dene']} dena hai.")
-        tips.append("Har hafte ek baar PaisaBook check karo.")
+        tips.append("Har hafte ek baar Apka Munim check karo.")
         return {
             "headline": "Aapka Financial Snapshot",
             "summary": f"Total income {currency} {summary['total_income']}, kharcha {currency} {summary['total_expense']}, net {currency} {round(net, 2)}.",
@@ -904,14 +1107,14 @@ async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.6 * cm, rightMargin=1.6 * cm,
-                            topMargin=1.6 * cm, bottomMargin=1.6 * cm, title=f"PaisaBook Report {month}")
+                            topMargin=1.6 * cm, bottomMargin=1.6 * cm, title=f"Apka Munim Report {month}")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="TitleBig", fontSize=22, leading=26, textColor=colors.HexColor("#2A4F4F"), spaceAfter=6))
     styles.add(ParagraphStyle(name="Sub", fontSize=10, textColor=colors.HexColor("#57534E"), spaceAfter=14))
     styles.add(ParagraphStyle(name="H2", fontSize=13, leading=16, textColor=colors.HexColor("#1C1917"), spaceBefore=8, spaceAfter=6))
 
     story = []
-    story.append(Paragraph("PaisaBook", styles["TitleBig"]))
+    story.append(Paragraph("Apka Munim", styles["TitleBig"]))
     story.append(Paragraph(f"Monthly Report &middot; {month} &middot; Ledger: {ledger_name}", styles["Sub"]))
 
     m_income = sum(r["amount"] for r in rows if r["type"] == "income")
@@ -996,7 +1199,7 @@ async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)
 
     story.append(Spacer(1, 12))
     story.append(Paragraph(
-        f"<font color='#78716C'><i>Generated by PaisaBook on {datetime.now(timezone.utc).strftime('%d %b %Y')}</i></font>",
+        f"<font color='#78716C'><i>Generated by Apka Munim on {datetime.now(timezone.utc).strftime('%d %b %Y')}</i></font>",
         styles["Normal"],
     ))
 
@@ -1012,7 +1215,7 @@ async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)
 # ----- Health -----
 @api.get("/")
 async def root():
-    return {"app": "PaisaBook", "status": "ok"}
+    return {"app": "Apka Munim", "status": "ok"}
 
 
 app.include_router(api)
@@ -1036,7 +1239,7 @@ async def startup():
     await db.budgets.create_index([("owner_id", 1), ("category", 1)], unique=True)
     await db.ledgers.create_index("invite_code")
     await db.ledgers.create_index("members")
-    logger.info("PaisaBook API started")
+    logger.info("Apka Munim API started")
 
 
 @app.on_event("shutdown")

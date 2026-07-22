@@ -28,12 +28,12 @@ export default function Login() {
           <div className="w-10 h-10 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
             <Wallet className="w-5 h-5 text-white" />
           </div>
-          <span className="font-heading text-2xl font-bold text-[#1C1917]">PaisaBook</span>
+          <span className="font-heading text-2xl font-bold text-[#1C1917]">Apka Munim</span>
         </Link>
 
         <div className="bg-white border border-[#E7E5DF] rounded-2xl p-8 shadow-sm soft-rise">
           <h1 className="font-heading text-2xl font-bold text-[#1C1917]">Wapas swagat hai</h1>
-          <p className="text-sm text-[#57534E] mt-1">Apne PaisaBook mein login karo.</p>
+          <p className="text-sm text-[#57534E] mt-1">Apne Apka Munim mein login karo.</p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div>

@@ -1,4 +1,4 @@
-// PaisaBook service worker — cache app shell + basic offline fallback
+// Apka Munim service worker — cache app shell + basic offline fallback
 const CACHE = "paisabook-v1";
 const APP_SHELL = [
   "/",

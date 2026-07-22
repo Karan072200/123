@@ -80,7 +80,7 @@ export default function Ledgers() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-heading text-3xl font-bold text-[#1C1917]">Family / Shared Ledgers</h1>
-          <p className="text-sm text-[#57534E] mt-1">Ghar walon ke saath ek hi PaisaBook share karo.</p>
+          <p className="text-sm text-[#57534E] mt-1">Ghar walon ke saath ek hi Apka Munim share karo.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setJoinOpen(true)}

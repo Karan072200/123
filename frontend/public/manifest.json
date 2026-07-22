@@ -1,6 +1,6 @@
 {
-  "name": "PaisaBook — Aapka paisa, aapke haath mein",
-  "short_name": "PaisaBook",
+  "name": "Apka Munim — Aapka paisa, aapke haath mein",
+  "short_name": "Apka Munim",
   "description": "Hinglish personal finance tracker: income, kharcha, udhaar (lene/dene), accounts, budgets aur AI insights.",
   "start_url": "/dashboard",
   "scope": "/",

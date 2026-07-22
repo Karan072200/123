@@ -4,8 +4,9 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import AddAccountDialog from "@/components/AddAccountDialog";
+import SmsParseDialog from "@/components/SmsParseDialog";
 import {
-  TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus,
+  TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const [recent, setRecent] = useState([]);
   const [openTxn, setOpenTxn] = useState(false);
   const [openAcc, setOpenAcc] = useState(false);
+  const [openSms, setOpenSms] = useState(false);
   const cur = user?.currency || "INR";
 
   const load = async () => {
@@ -62,7 +64,12 @@ export default function Dashboard() {
             Aapka paisa aaj kaisa hai?
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setOpenSms(true)}
+            data-testid="dashboard-sms-parse-btn"
+            className="border-[#2A4F4F]/30 text-[#2A4F4F] hover:bg-[#2A4F4F]/5 rounded-full">
+            <MessageSquare className="w-4 h-4 mr-1" /> SMS Parse
+          </Button>
           <Button variant="outline" onClick={() => setOpenAcc(true)}
             data-testid="dashboard-add-account-btn"
             className="border-[#E7E5DF] rounded-full">
@@ -167,6 +174,7 @@ export default function Dashboard() {
       <AddTransactionDialog open={openTxn} onOpenChange={setOpenTxn}
         accounts={accounts} onDone={load} />
       <AddAccountDialog open={openAcc} onOpenChange={setOpenAcc} onDone={load} />
+      <SmsParseDialog open={openSms} onOpenChange={setOpenSms} accounts={accounts} onDone={load} />
     </div>
   );
 }

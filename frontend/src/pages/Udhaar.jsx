@@ -127,7 +127,7 @@ export default function Udhaar() {
   };
 
   const remind = (u) => {
-    const msg = `Namaste ${u.person_name}, aapse ₹${u.amount} lena/dena baaki hai. Please settle karo. — PaisaBook`;
+    const msg = `Namaste ${u.person_name}, aapse ₹${u.amount} lena/dena baaki hai. Please settle karo. — Apka Munim`;
     if (u.phone) {
       const url = `https://wa.me/${u.phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`;
       window.open(url, "_blank");

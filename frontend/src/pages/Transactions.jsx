@@ -3,7 +3,8 @@ import { http, formatMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
-import { Trash2, Plus, ArrowUpRight, ArrowDownRight, Pencil } from "lucide-react";
+import SmsParseDialog from "@/components/SmsParseDialog";
+import { Trash2, Plus, ArrowUpRight, ArrowDownRight, Pencil, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -59,11 +60,18 @@ export default function Transactions() {
           <h1 className="font-heading text-3xl font-bold text-[#1C1917]">Transactions</h1>
           <p className="text-sm text-[#57534E] mt-1">Aapke saare aaye aur gaye paise.</p>
         </div>
-        <Button onClick={() => { setEditing(null); setOpen(true); }}
-          data-testid="txn-page-add-btn"
-          className="bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full">
-          <Plus className="w-4 h-4 mr-1" /> Add Transaction
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setOpenSms(true)}
+            data-testid="txn-page-sms-btn"
+            className="border-[#2A4F4F]/30 text-[#2A4F4F] hover:bg-[#2A4F4F]/5 rounded-full">
+            <MessageSquare className="w-4 h-4 mr-1" /> SMS Parse
+          </Button>
+          <Button onClick={() => { setEditing(null); setOpen(true); }}
+            data-testid="txn-page-add-btn"
+            className="bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full">
+            <Plus className="w-4 h-4 mr-1" /> Add Transaction
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white border border-[#E7E5DF] rounded-xl p-4 grid md:grid-cols-3 gap-3">
@@ -141,6 +149,7 @@ export default function Transactions() {
 
       <AddTransactionDialog open={open} onOpenChange={setOpen}
         accounts={accounts} existing={editing} onDone={load} />
+      <SmsParseDialog open={openSms} onOpenChange={setOpenSms} accounts={accounts} onDone={load} />
     </div>
   );
 }
