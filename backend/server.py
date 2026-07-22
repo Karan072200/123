@@ -483,6 +483,180 @@ async def ai_insights(user=Depends(get_current_user)):
         }
 
 
+# ----- Recurring Transactions -----
+class RecurringIn(BaseModel):
+    account_id: str
+    type: Literal["income", "expense"]
+    amount: float
+    category: str
+    note: Optional[str] = ""
+    frequency: Literal["daily", "weekly", "monthly"] = "monthly"
+    day_of_month: Optional[int] = None  # 1-28 for monthly
+    start_date: Optional[str] = None
+    active: bool = True
+
+
+def _next_due(from_dt: datetime, frequency: str, day_of_month: Optional[int]) -> datetime:
+    if frequency == "daily":
+        return from_dt + timedelta(days=1)
+    if frequency == "weekly":
+        return from_dt + timedelta(days=7)
+    # monthly
+    year = from_dt.year
+    month = from_dt.month + 1
+    if month > 12:
+        month = 1
+        year += 1
+    day = min(day_of_month or from_dt.day, 28)
+    return from_dt.replace(year=year, month=month, day=day)
+
+
+@api.get("/recurring")
+async def list_recurring(user=Depends(get_current_user)):
+    rows = await db.recurring.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    return rows
+
+
+@api.post("/recurring")
+async def create_recurring(body: RecurringIn, user=Depends(get_current_user)):
+    acc = await db.accounts.find_one({"id": body.account_id, "user_id": user["id"]})
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    now = datetime.now(timezone.utc)
+    start = now
+    if body.start_date:
+        try:
+            start = datetime.fromisoformat(body.start_date.replace("Z", "+00:00"))
+        except Exception:
+            start = now
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "account_id": body.account_id,
+        "account_name": acc["name"],
+        "type": body.type,
+        "amount": float(body.amount),
+        "category": body.category,
+        "note": body.note or "",
+        "frequency": body.frequency,
+        "day_of_month": body.day_of_month,
+        "active": body.active,
+        "start_date": start.isoformat(),
+        "next_due": start.isoformat(),
+        "last_run": None,
+        "created_at": now.isoformat(),
+    }
+    await db.recurring.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/recurring/{rec_id}")
+async def update_recurring(rec_id: str, body: dict, user=Depends(get_current_user)):
+    allowed = {"active", "amount", "category", "note", "day_of_month", "frequency"}
+    updates = {k: v for k, v in body.items() if k in allowed and v is not None}
+    if updates:
+        await db.recurring.update_one({"id": rec_id, "user_id": user["id"]}, {"$set": updates})
+    return {"ok": True}
+
+
+@api.delete("/recurring/{rec_id}")
+async def delete_recurring(rec_id: str, user=Depends(get_current_user)):
+    await db.recurring.delete_one({"id": rec_id, "user_id": user["id"]})
+    return {"ok": True}
+
+
+@api.post("/recurring/run")
+async def run_recurring(user=Depends(get_current_user)):
+    """Generate all overdue recurring transactions for this user."""
+    now = datetime.now(timezone.utc)
+    created = 0
+    rows = await db.recurring.find({"user_id": user["id"], "active": True}, {"_id": 0}).to_list(500)
+    for r in rows:
+        try:
+            due = datetime.fromisoformat(r["next_due"].replace("Z", "+00:00"))
+        except Exception:
+            continue
+        # generate up to 24 iterations per run to avoid loops
+        for _ in range(24):
+            if due > now:
+                break
+            txn_doc = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "account_id": r["account_id"],
+                "account_name": r["account_name"],
+                "type": r["type"],
+                "amount": r["amount"],
+                "category": r["category"],
+                "note": f"{r.get('note', '')} (recurring)".strip(),
+                "date": due.isoformat(),
+                "created_at": now.isoformat(),
+                "recurring_id": r["id"],
+            }
+            await db.transactions.insert_one(txn_doc)
+            created += 1
+            due = _next_due(due, r["frequency"], r.get("day_of_month"))
+        await db.recurring.update_one(
+            {"id": r["id"], "user_id": user["id"]},
+            {"$set": {"next_due": due.isoformat(), "last_run": now.isoformat()}},
+        )
+    return {"created": created}
+
+
+# ----- Budgets -----
+class BudgetIn(BaseModel):
+    category: str
+    amount: float
+
+
+@api.get("/budgets")
+async def list_budgets(user=Depends(get_current_user)):
+    rows = await db.budgets.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
+    # compute spent this month per category
+    now = datetime.now(timezone.utc)
+    month_prefix = now.strftime("%Y-%m")
+    spent_by_cat = {}
+    txns = await db.transactions.find(
+        {"user_id": user["id"], "type": "expense"}, {"_id": 0}
+    ).to_list(5000)
+    for t in txns:
+        d = t.get("date", "")
+        if d.startswith(month_prefix):
+            spent_by_cat[t["category"]] = spent_by_cat.get(t["category"], 0.0) + t["amount"]
+    for b in rows:
+        b["spent"] = round(spent_by_cat.get(b["category"], 0.0), 2)
+        b["remaining"] = round(b["amount"] - b["spent"], 2)
+        b["percent"] = round((b["spent"] / b["amount"] * 100) if b["amount"] > 0 else 0, 1)
+    return rows
+
+
+@api.post("/budgets")
+async def upsert_budget(body: BudgetIn, user=Depends(get_current_user)):
+    existing = await db.budgets.find_one({"user_id": user["id"], "category": body.category})
+    if existing:
+        await db.budgets.update_one(
+            {"id": existing["id"], "user_id": user["id"]},
+            {"$set": {"amount": float(body.amount)}},
+        )
+        return {"ok": True, "id": existing["id"]}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "category": body.category,
+        "amount": float(body.amount),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.budgets.insert_one(doc)
+    return {"ok": True, "id": doc["id"]}
+
+
+@api.delete("/budgets/{budget_id}")
+async def delete_budget(budget_id: str, user=Depends(get_current_user)):
+    await db.budgets.delete_one({"id": budget_id, "user_id": user["id"]})
+    return {"ok": True}
+
+
 # ----- Health -----
 @api.get("/")
 async def root():
@@ -507,6 +681,8 @@ async def startup():
     await db.accounts.create_index([("user_id", 1)])
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.udhaar.create_index([("user_id", 1)])
+    await db.recurring.create_index([("user_id", 1)])
+    await db.budgets.create_index([("user_id", 1), ("category", 1)], unique=True)
     logger.info("PaisaBook API started")
 
 

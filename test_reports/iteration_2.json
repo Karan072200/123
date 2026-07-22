@@ -1,0 +1,68 @@
+{
+  "summary": "Iteration 2 — tested NEW features only (Edit Txn PATCH, Recurring CRUD + Run + Toggle, Budgets CRUD + progress calc, sidebar nav, dashboard auto-run). Backend: 17/17 pytest passed. Frontend: all 11 requested flows verified end-to-end via Playwright.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All pages (dev-mode only)", "issues": ["CRA/webpack error overlay pops up for 'ResizeObserver loop completed with undelivered notifications' after rapid radix Select interactions. This is a well-known benign browser warning (not a real error). It does NOT affect production builds, but in dev it blocks click interactions. Optional fix: add a global window.addEventListener('error', e => { if (e.message.includes('ResizeObserver loop')) { e.stopImmediatePropagation(); } }) in index.js, OR disable react-error-overlay in dev."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/iteration2.xml"
+  ],
+  "passed_backend": [
+    "PATCH /api/transactions/{id} updates amount+note (verified via GET)",
+    "PATCH /api/transactions/{id} changes account_id + auto-updates account_name",
+    "POST /api/recurring — creates rule with monthly frequency, active=true, next_due set",
+    "GET /api/recurring — lists created rule",
+    "POST /api/recurring/run — returns {created: N}, N>=1 when start_date is in past",
+    "Auto-generated txn has recurring_id and correct category/amount",
+    "PATCH /api/recurring/{id} active:false toggles off",
+    "PATCH /api/recurring/{id} active:true toggles back on",
+    "DELETE /api/recurring/{id} removes rule",
+    "POST /api/budgets — creates budget for new category",
+    "POST /api/budgets — same category re-submit UPDATES (upsert; no duplicate); unique index enforced",
+    "GET /api/budgets — computes spent/remaining/percent correctly (300/1000 → 30.0%)",
+    "DELETE /api/budgets/{id} — removes budget",
+    "Auth guards: /api/recurring, /api/budgets, /api/recurring/run all return 401 without token"
+  ],
+  "passed_frontend": [
+    "Login → dashboard redirect",
+    "Dashboard silently fires POST /api/recurring/run on load (no visible error; auto-created (recurring) txns show in Recent list)",
+    "Sidebar nav shows nav-recurring and nav-budgets with correct icons/labels",
+    "Budgets: /budgets loads, existing seeded Food budget (₹1,550 / ₹8,000) renders with green progress bar and '19% used, ₹6,450 left'",
+    "Budgets: Add Budget dialog opens; Shopping @ ₹3,000 creates card, shows '₹0 of ₹3,000 · 0% used · ₹3,000 left'",
+    "Budgets: same category re-submit @ ₹3,500 UPDATES existing card (no duplicate) — upsert works",
+    "Budgets: delete removes card",
+    "Recurring: /recurring loads, Add Recurring dialog opens, submit creates card with amount+note+frequency+Active",
+    "Recurring: toggle switch flips card state Active → Paused → Active (PATCH verified)",
+    "Recurring: 'Run now' calls POST /api/recurring/run and shows toast '1 transaction auto-add hue'",
+    "Recurring: delete removes card",
+    "Transactions: pencil icon opens AddTransactionDialog pre-filled (amount, category, note); update saves via PATCH and list reflects new amount/note (₹77.77 / TEST_UI_edited)"
+  ],
+  "critical_code_review_comments": [
+    "server.py update_recurring uses raw body: dict but Pydantic model would be safer (currently allowlist filters keys, so no injection risk — acceptable).",
+    "_next_due for monthly clamps day to min(day_of_month or from_dt.day, 28) — intentional to avoid month-end issues (good).",
+    "Recurring auto-gen loop capped at 24 iterations per rule — good safety.",
+    "Budgets upsert uses unique index (user_id, category) — matches server.py startup index creation.",
+    "Percent calc guards against amount==0 division (returns 0) — good.",
+    "Dashboard.load() calls POST /api/recurring/run inside try/catch — silent, non-blocking. Correct.",
+    "AddTransactionDialog useEffect on [type] resets category only in create mode (via isEdit flag) — correctly preserves category during edit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new)",
+    "/app/test_reports/pytest/iteration2.xml (junit output)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (11/11 requested flows)"},
+  "test_credentials": "demo@paisabook.com / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests created and cleaned up TEST_-prefixed data (accounts, transactions, budgets, recurring). Existing seeded HDFC Savings account, seeded Food budget (₹8,000), and seeded Netflix Bills 1500 monthly recurring rule remain intact.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 2 features (Edit txn, Recurring CRUD/run/toggle, Budgets CRUD/upsert/progress) are 100% functional both API and UI. Only cosmetic dev-mode ResizeObserver overlay noise exists (harmless). Previous iteration_1 also 100% — future iterations only need to test NEW features. Test file /app/backend/tests/test_iteration2.py can be reused for regression.",
+  "rca of the issue": "N/A — no bugs found. The ResizeObserver overlay is a browser+webpack quirk when radix-ui Select combines with dialog transitions; it's a warning not an error, and disappears in production."
+}

@@ -9,7 +9,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORIES, http } from "@/lib/api";
 import { toast } from "sonner";
 
-export default function AddTransactionDialog({ open, onOpenChange, accounts, onDone }) {
+export default function AddTransactionDialog({ open, onOpenChange, accounts, onDone, existing }) {
+  const isEdit = Boolean(existing);
   const [type, setType] = useState("expense");
   const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState("");
@@ -19,27 +20,40 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
 
   useEffect(() => {
     if (open) {
-      setType("expense");
-      setAmount("");
-      setNote("");
-      setCategory("Food");
-      setAccountId(accounts?.[0]?.id || "");
+      if (existing) {
+        setType(existing.type);
+        setAccountId(existing.account_id);
+        setAmount(String(existing.amount));
+        setCategory(existing.category);
+        setNote(existing.note || "");
+      } else {
+        setType("expense");
+        setAmount("");
+        setNote("");
+        setCategory("Food");
+        setAccountId(accounts?.[0]?.id || "");
+      }
     }
-  }, [open, accounts]);
+  }, [open, accounts, existing]);
 
   useEffect(() => {
-    setCategory(CATEGORIES[type][0]);
-  }, [type]);
+    // only reset category to first when switching type in create mode
+    if (!isEdit) setCategory(CATEGORIES[type][0]);
+  }, [type, isEdit]);
 
   const submit = async () => {
     if (!accountId) return toast.error("Pehle ek account banao");
     if (!amount || Number(amount) <= 0) return toast.error("Sahi amount daalo");
     setSaving(true);
     try {
-      await http.post("/transactions", {
-        account_id: accountId, type, amount: Number(amount), category, note,
-      });
-      toast.success(type === "income" ? "Income add ho gayi!" : "Kharcha record ho gaya!");
+      const payload = { account_id: accountId, type, amount: Number(amount), category, note };
+      if (isEdit) {
+        await http.patch(`/transactions/${existing.id}`, payload);
+        toast.success("Update ho gaya!");
+      } else {
+        await http.post("/transactions", payload);
+        toast.success(type === "income" ? "Income add ho gayi!" : "Kharcha record ho gaya!");
+      }
       onOpenChange(false);
       onDone?.();
     } catch (e) {
@@ -53,8 +67,8 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-heading">Naya Transaction</DialogTitle>
-          <DialogDescription>Income ya kharcha add karo.</DialogDescription>
+          <DialogTitle className="font-heading">{isEdit ? "Edit Transaction" : "Naya Transaction"}</DialogTitle>
+          <DialogDescription>{isEdit ? "Details update karo." : "Income ya kharcha add karo."}</DialogDescription>
         </DialogHeader>
 
         <Tabs value={type} onValueChange={setType} className="w-full">
@@ -115,7 +129,7 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
           <Button onClick={submit} disabled={saving}
             data-testid="txn-submit-btn"
             className="w-full bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full h-11">
-            {saving ? "Save ho raha…" : "Save karo"}
+            {saving ? "Save ho raha…" : isEdit ? "Update karo" : "Save karo"}
           </Button>
         </div>
       </DialogContent>

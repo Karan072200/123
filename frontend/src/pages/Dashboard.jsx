@@ -37,6 +37,8 @@ export default function Dashboard() {
   const cur = user?.currency || "INR";
 
   const load = async () => {
+    // Auto-run recurring transactions first (safe to call repeatedly)
+    try { await http.post("/recurring/run"); } catch { /* ignore */ }
     const [s, a, t] = await Promise.all([
       http.get("/analytics/summary").then((r) => r.data),
       http.get("/accounts").then((r) => r.data),

@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark, BarChart3, LogOut } from "lucide-react";
+import { Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark, BarChart3, LogOut, Repeat, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES } from "@/lib/api";
@@ -11,6 +11,8 @@ const navItems = [
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight, testid: "nav-transactions" },
   { to: "/udhaar", label: "Udhaar", icon: Users, testid: "nav-udhaar" },
   { to: "/accounts", label: "Accounts", icon: Landmark, testid: "nav-accounts" },
+  { to: "/recurring", label: "Recurring", icon: Repeat, testid: "nav-recurring" },
+  { to: "/budgets", label: "Budgets", icon: Target, testid: "nav-budgets" },
   { to: "/reports", label: "Reports & AI", icon: BarChart3, testid: "nav-reports" },
 ];
 

@@ -3,7 +3,7 @@ import { http, formatMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
-import { Trash2, Plus, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Trash2, Plus, ArrowUpRight, ArrowDownRight, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ export default function Transactions() {
   const [txns, setTxns] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [accFilter, setAccFilter] = useState("all");
@@ -30,10 +31,15 @@ export default function Transactions() {
   useEffect(() => { load(); }, []);
 
   const del = async (id) => {
-    if (!confirm("Delete karna hai?")) return;
+    if (!window.confirm("Delete karna hai?")) return;
     await http.delete(`/transactions/${id}`);
     toast.success("Delete ho gaya");
     load();
+  };
+
+  const startEdit = (t) => {
+    setEditing(t);
+    setOpen(true);
   };
 
   const filtered = txns.filter((t) => {
@@ -53,7 +59,7 @@ export default function Transactions() {
           <h1 className="font-heading text-3xl font-bold text-[#1C1917]">Transactions</h1>
           <p className="text-sm text-[#57534E] mt-1">Aapke saare aaye aur gaye paise.</p>
         </div>
-        <Button onClick={() => setOpen(true)}
+        <Button onClick={() => { setEditing(null); setOpen(true); }}
           data-testid="txn-page-add-btn"
           className="bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full">
           <Plus className="w-4 h-4 mr-1" /> Add Transaction
@@ -116,6 +122,11 @@ export default function Transactions() {
                   }`}>
                     {t.type === "income" ? "+" : "−"} {formatMoney(t.amount, cur)}
                   </div>
+                  <button onClick={() => startEdit(t)}
+                    data-testid={`txn-edit-${t.id}`}
+                    className="p-1.5 rounded-md text-[#A8A29E] hover:text-[#2A4F4F] hover:bg-[#2A4F4F]/10 transition-colors">
+                    <Pencil className="w-4 h-4" />
+                  </button>
                   <button onClick={() => del(t.id)}
                     data-testid={`txn-delete-${t.id}`}
                     className="p-1.5 rounded-md text-[#A8A29E] hover:text-[#B15039] hover:bg-[#D96C52]/10 transition-colors">
@@ -128,7 +139,8 @@ export default function Transactions() {
         )}
       </div>
 
-      <AddTransactionDialog open={open} onOpenChange={setOpen} accounts={accounts} onDone={load} />
+      <AddTransactionDialog open={open} onOpenChange={setOpen}
+        accounts={accounts} existing={editing} onDone={load} />
     </div>
   );
 }

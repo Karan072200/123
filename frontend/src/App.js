@@ -10,6 +10,8 @@ import Transactions from "@/pages/Transactions";
 import Udhaar from "@/pages/Udhaar";
 import Accounts from "@/pages/Accounts";
 import Reports from "@/pages/Reports";
+import Recurring from "@/pages/Recurring";
+import Budgets from "@/pages/Budgets";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 
@@ -48,6 +50,8 @@ function App() {
             <Route path="/udhaar" element={<Protected><Udhaar /></Protected>} />
             <Route path="/accounts" element={<Protected><Accounts /></Protected>} />
             <Route path="/reports" element={<Protected><Reports /></Protected>} />
+            <Route path="/recurring" element={<Protected><Recurring /></Protected>} />
+            <Route path="/budgets" element={<Protected><Budgets /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>
