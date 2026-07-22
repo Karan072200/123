@@ -2,6 +2,7 @@ import React from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import { Toaster } from "sonner";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -12,6 +13,7 @@ import Accounts from "@/pages/Accounts";
 import Reports from "@/pages/Reports";
 import Recurring from "@/pages/Recurring";
 import Budgets from "@/pages/Budgets";
+import Ledgers from "@/pages/Ledgers";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -40,10 +42,11 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <AuthProvider>
-          <Toaster position="top-right" richColors />
-          <InstallPrompt />
-          <Routes>
+        <ThemeProvider>
+          <AuthProvider>
+            <Toaster position="top-right" richColors />
+            <InstallPrompt />
+            <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
             <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
@@ -54,9 +57,11 @@ function App() {
             <Route path="/reports" element={<Protected><Reports /></Protected>} />
             <Route path="/recurring" element={<Protected><Recurring /></Protected>} />
             <Route path="/budgets" element={<Protected><Budgets /></Protected>} />
+            <Route path="/ledgers" element={<Protected><Ledgers /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AuthProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </BrowserRouter>
     </div>
   );

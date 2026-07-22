@@ -12,6 +12,7 @@ body {
     -moz-osx-font-smoothing: grayscale;
     background: #F9F8F6;
     color: #1C1917;
+    transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .font-heading {
@@ -44,38 +45,28 @@ code {
         --border: 40 15% 88%;
         --input: 40 15% 88%;
         --ring: 180 30% 24%;
-        --chart-1: 137 25% 38%;
-        --chart-2: 12 62% 58%;
-        --chart-3: 35 75% 65%;
-        --chart-4: 180 30% 24%;
-        --chart-5: 25 40% 45%;
         --radius: 0.6rem;
     }
     .dark {
-        --background: 24 10% 8%;
-        --foreground: 40 20% 97%;
-        --card: 24 10% 12%;
-        --card-foreground: 40 20% 97%;
-        --popover: 24 10% 12%;
-        --popover-foreground: 40 20% 97%;
-        --primary: 180 30% 60%;
+        --background: 24 8% 8%;
+        --foreground: 40 15% 92%;
+        --card: 24 8% 12%;
+        --card-foreground: 40 15% 92%;
+        --popover: 24 8% 12%;
+        --popover-foreground: 40 15% 92%;
+        --primary: 180 30% 55%;
         --primary-foreground: 24 10% 10%;
-        --secondary: 24 5% 18%;
-        --secondary-foreground: 40 20% 97%;
-        --muted: 24 5% 18%;
+        --secondary: 24 6% 16%;
+        --secondary-foreground: 40 15% 92%;
+        --muted: 24 6% 16%;
         --muted-foreground: 25 6% 65%;
-        --accent: 24 5% 18%;
-        --accent-foreground: 40 20% 97%;
+        --accent: 24 6% 16%;
+        --accent-foreground: 40 15% 92%;
         --destructive: 12 65% 55%;
         --destructive-foreground: 0 0% 100%;
-        --border: 24 5% 22%;
-        --input: 24 5% 22%;
-        --ring: 180 30% 60%;
-        --chart-1: 137 25% 55%;
-        --chart-2: 12 62% 62%;
-        --chart-3: 35 75% 65%;
-        --chart-4: 180 30% 60%;
-        --chart-5: 25 40% 65%;
+        --border: 24 6% 22%;
+        --input: 24 6% 22%;
+        --ring: 180 30% 55%;
     }
 }
 
@@ -97,6 +88,11 @@ code {
         radial-gradient(circle at 20% 30%, rgba(74, 124, 89, 0.06) 0px, transparent 40%),
         radial-gradient(circle at 80% 70%, rgba(232, 179, 101, 0.08) 0px, transparent 40%);
 }
+.dark .paper-grain {
+    background-image:
+        radial-gradient(circle at 20% 30%, rgba(74, 124, 89, 0.12) 0px, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(232, 179, 101, 0.10) 0px, transparent 40%);
+}
 
 /* stagger fade-in for cards */
 @keyframes softRise {
@@ -106,3 +102,39 @@ code {
 .soft-rise {
     animation: softRise 0.5s ease-out both;
 }
+
+/* ---- Dark mode overrides for hardcoded arbitrary color classes ----
+   Rather than touching every component we remap the specific hex colours
+   used across the app when the .dark class is on <html>. */
+.dark body { background: #151312; color: #EAE7DF; }
+
+/* Surfaces (light -> dark) */
+.dark .bg-white { background-color: #1E1B1A !important; }
+.dark .bg-\[\#F9F8F6\] { background-color: #151312 !important; }
+.dark .bg-\[\#F2F0EA\] { background-color: #262220 !important; }
+.dark .bg-\[\#FAF9F5\] { background-color: #201D1B !important; }
+
+/* Borders */
+.dark .border-\[\#E7E5DF\] { border-color: #2C2825 !important; }
+.dark .divide-\[\#E7E5DF\] > :not([hidden]) ~ :not([hidden]) { border-color: #2C2825 !important; }
+
+/* Text */
+.dark .text-\[\#1C1917\] { color: #EAE7DF !important; }
+.dark .text-\[\#57534E\] { color: #B9B3AA !important; }
+.dark .text-\[\#78716C\] { color: #9C958B !important; }
+.dark .text-\[\#A8A29E\] { color: #7C7670 !important; }
+
+/* Hover states */
+.dark .hover\:bg-\[\#F2F0EA\]:hover { background-color: #2A2624 !important; }
+.dark .hover\:bg-\[\#F9F8F6\]:hover { background-color: #201D1B !important; }
+
+/* Muted paper card in auth / sidebar */
+.dark .bg-white\/60 { background-color: rgba(30, 27, 26, 0.6) !important; }
+
+/* Ensure inputs have proper dark bg via shadcn theme tokens */
+.dark input, .dark textarea, .dark select {
+    color-scheme: dark;
+}
+
+/* Keep brand accents (teal, terracotta, honey, sage) visually consistent -
+   they are already legible on both backgrounds so we don't remap them. */

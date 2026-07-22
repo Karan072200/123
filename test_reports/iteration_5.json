@@ -1,0 +1,62 @@
+{
+  "summary": "v3 feature testing (Dark Mode, CSV/PDF Export, Budget Breach Notifications, Family/Shared Ledger). Backend: 32 new + 17 regression = 49/49 pytest passing. Frontend: dark mode toggle w/ html.dark + localStorage + meta theme-color, ledger create/join/switch/leave dialog+cards, CSV+PDF downloads triggered, budget-breach toast confirmed visible ('Budget alert: Food 99.6% use ho gaya'). Data migration verified: demo user's accounts/txns still visible after backfill.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/transactions (shared ledger)", "issue": "created_by is attached only when the current ledger is shared; PATCH /api/transactions does not similarly enforce that the editor is a member (relies on owner_id filter which is correct). Working as designed — noted for RCA context only."},
+      {"endpoint": "compute_budget_alerts", "issue": "Contains a dead `pipeline` variable that is defined then unused (line 434-437 in server.py). Cosmetic dead code — no functional impact."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/iteration5.xml"
+  ],
+  "passed_backend": [
+    "TestAuthMeShape (4/4): /auth/me returns personal_ledger_id + current_ledger_id + current_ledger; backfilled accounts and txns visible for demo",
+    "TestLedgers (13/13): create shared (6-char [A-Z0-9] invite code); user2 join+idempotent+invalid-code-404; switch (200/404); shared-accounts-empty-initially confirms data isolation; data isolation & shared visibility with created_by attached; leave personal 400 'personal', owner-cannot-leave-with-others 400 'ownership', user2-leave returns to personal, owner-can-leave-alone deletes ledger + data",
+    "TestExport (4/4): CSV header 'Date,Type,Category,Account,Amount,Note'; correct Content-Disposition filename; PDF returns %PDF signature >500 bytes",
+    "TestBudgetAlerts (5/5): response shape {transaction, budget_alerts}; warning at 90%; over at >=100%; no alert <80%; income does NOT trigger alerts",
+    "TestRegression (6/6): analytics summary/monthly, udhaar/budgets/recurring list, auth guards on new endpoints",
+    "Iteration2 regression (17/17): edit txn PATCH, recurring CRUD+run, budgets CRUD+progress after fixing tests to consume new {transaction, budget_alerts} response wrapper"
+  ],
+  "passed_frontend": [
+    "Login demo@paisabook.com → /dashboard",
+    "Sidebar LedgerSwitcher visible with current ledger name ('Personal')",
+    "Dark mode toggle: html.dark class applied, localStorage pb-theme='dark', meta[name=theme-color] updated to #151312; toggling back removes .dark",
+    "Nav to /ledgers loads Create Ledger + Join by Code buttons",
+    "Create shared ledger 'UI_Test_...' → card appears with 6-char invite code visible (Y9PT6Z observed)",
+    "Switch ledger via card button → 'Active' badge appears on new ledger card, sidebar switcher shows new name ('Family')",
+    "Sidebar dropdown shows all ledgers (Personal + 2 shared) → clicking Personal option switches back",
+    "Reports export card renders month input + CSV + PDF buttons",
+    "CSV download triggered with filename paisabook-2026-07.csv",
+    "PDF download triggered with filename paisabook-2026-07.pdf",
+    "Budget breach: setting Food budget just above current spend then adding 50 → toast 'Budget alert: Food 99.6% use ho gaya' + 'Kharcha record ho gaya!' both visible, confirming AddTransactionDialog correctly destructures {transaction, budget_alerts} from POST /transactions",
+    "Dark mode traversal: dashboard, accounts, ledgers, reports all render coherently in dark theme (main background rgb equal to dark theme color)"
+  ],
+  "critical_code_review_comments": [
+    "server.py:434-437 — compute_budget_alerts defines an unused MongoDB pipeline variable, then does a full collection scan of transactions and filters in Python by 'date startswith YYYY-MM'. This is O(n) per POST /transactions when a budget exists. For scale, use a proper $match on owner_id + type + category with a stringified date-prefix or a real Date field. Not blocking now (limit 5000).",
+    "get_current_user runs ensure_personal_ledger + a second users.find_one on every authenticated request. The backfill loop over 5 collections runs even when it's a no-op (personal_ledger_id already set) — actually it's guarded by `if not personal_id`, so it's only expensive once per user. OK.",
+    "Ledger 'invite_code' uniqueness is not enforced at DB level (only an index on invite_code but not unique). Extremely low collision risk with 30^6=~729M keys but consider adding unique index for robustness.",
+    "Budget breach frontend uses navigator.serviceWorker for showBudgetNotification but toast fallback works and is user-facing — the 'browser Notification API best-effort' behaviour is acceptable per spec.",
+    "AddTransactionDialog handles the new response shape via `data?.budget_alerts?.length > 0` — safely optional, but old callers of POST /transactions in tests will now break unless updated (fixed iteration2.py as courtesy).",
+    "Files under 700 LOC OK. server.py is 1050 lines — approaching limit; consider splitting into routers per resource next iteration."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5.py (new — 32 tests covering v3 features)",
+    "/app/backend/tests/test_iteration2.py (adapted to new POST /transactions {transaction, budget_alerts} response format + unique category prefix for test_budget_progress_calculation)",
+    "/app/memory/test_credentials.md (documented family2 registration convention)"
+  ],
+  "success_rate": {"backend": "100% (49/49)", "frontend": "100% of critical v3 flows"},
+  "test_credentials": "demo@paisabook.com / demo1234 (canonical); family2+<hex>@paisabook.com / family1234 (throwaway per-run for shared-ledger tests)",
+  "seed_data_creation": "None persistent. Tests use TEST_-prefixed budgets, txns and 'UI_Test_' ledgers, all cleaned up at end of test class or via a final cleanup pass. Confirmed post-run: 3 residual test budgets + 3 residual test txns + 1 orphan shared ledger were removed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration5.py MUST be run serially (not with pytest-xdist -n). Reason: the demo user is shared across xdist workers, so parallel tests that switch the demo user's current_ledger_id race with each other and cause spurious data-isolation failures. pytest.ini has -n auto; use `-o addopts=''` to disable. Verified 49/49 pass serially. All v3 features (dark mode, exports, ledgers, budget alerts) are wired correctly end-to-end. No open bugs.",
+  "rca of the issue": "N/A — no bugs found. Two failed test runs during discovery: (1) parallel xdist workers switching same demo user across ledgers → resolved by running serially, (2) old iteration2 tests keying off txn['id'] instead of {transaction:{id}} → fixed to match documented breaking API change."
+}

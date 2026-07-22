@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { http, formatMoney } from "@/lib/api";
+import { http, formatMoney, API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, FileText, FileSpreadsheet, Download } from "lucide-react";
+import { toast } from "sonner";
 
 const CHART_COLORS = ["#4A7C59", "#D96C52", "#E8B365", "#2A4F4F", "#7A6C5D", "#3B6446", "#B15039", "#8B6220"];
 
@@ -17,6 +19,8 @@ export default function Reports() {
   const [monthly, setMonthly] = useState([]);
   const [ai, setAi] = useState(null);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [exportMonth, setExportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [exporting, setExporting] = useState(null);
 
   const load = async () => {
     const [s, m] = await Promise.all([
@@ -37,11 +41,71 @@ export default function Reports() {
     } finally { setLoadingAi(false); }
   };
 
+  const doExport = async (format) => {
+    setExporting(format);
+    try {
+      const res = await http.get(`/export/${format}?month=${exportMonth}`, { responseType: "blob" });
+      const blob = new Blob([res.data], {
+        type: format === "pdf" ? "application/pdf" : "text/csv",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `paisabook-${exportMonth}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${format.toUpperCase()} download ho gaya`);
+    } catch (e) {
+      toast.error(`Export nahi hua: ${e?.message || "unknown error"}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-heading text-3xl font-bold text-[#1C1917]">Reports & AI Insights</h1>
         <p className="text-sm text-[#57534E] mt-1">Charts, trends aur smart tips.</p>
+      </div>
+
+      {/* Export card */}
+      <div className="bg-white border border-[#E7E5DF] rounded-xl p-6" data-testid="export-card">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#4A7C59]/15 flex items-center justify-center">
+              <Download className="w-5 h-5 text-[#3B6446]" />
+            </div>
+            <div>
+              <h2 className="font-heading text-lg font-semibold text-[#1C1917]">Monthly Export</h2>
+              <p className="text-xs text-[#78716C]">Download karo — CA ko bhejo ya khud dekhne ke liye.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input type="month" value={exportMonth}
+              onChange={(e) => setExportMonth(e.target.value)}
+              data-testid="export-month-input"
+              className="w-40 border-[#E7E5DF]" />
+            <Button variant="outline" onClick={() => doExport("csv")} disabled={exporting !== null}
+              data-testid="export-csv-btn"
+              className="border-[#E7E5DF] rounded-full">
+              {exporting === "csv"
+                ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                : <FileSpreadsheet className="w-4 h-4 mr-1" />}
+              CSV
+            </Button>
+            <Button onClick={() => doExport("pdf")} disabled={exporting !== null}
+              data-testid="export-pdf-btn"
+              className="bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full">
+              {exporting === "pdf"
+                ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                : <FileText className="w-4 h-4 mr-1" />}
+              PDF Report
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* AI insights */}

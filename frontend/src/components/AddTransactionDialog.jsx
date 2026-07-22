@@ -6,11 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CATEGORIES, http } from "@/lib/api";
+import { CATEGORIES, http, ensureNotificationPermission, showBudgetNotification } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 export default function AddTransactionDialog({ open, onOpenChange, accounts, onDone, existing }) {
   const isEdit = Boolean(existing);
+  const { user } = useAuth();
   const [type, setType] = useState("expense");
   const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState("");
@@ -37,7 +39,6 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
   }, [open, accounts, existing]);
 
   useEffect(() => {
-    // only reset category to first when switching type in create mode
     if (!isEdit) setCategory(CATEGORIES[type][0]);
   }, [type, isEdit]);
 
@@ -51,8 +52,21 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
         await http.patch(`/transactions/${existing.id}`, payload);
         toast.success("Update ho gaya!");
       } else {
-        await http.post("/transactions", payload);
+        const { data } = await http.post("/transactions", payload);
         toast.success(type === "income" ? "Income add ho gayi!" : "Kharcha record ho gaya!");
+        // Budget breach alerts
+        if (data?.budget_alerts?.length > 0) {
+          await ensureNotificationPermission();
+          data.budget_alerts.forEach((a) => {
+            toast(
+              a.level === "over"
+                ? `Budget cross ho gaya: ${a.category} (${a.percent}%)`
+                : `Budget alert: ${a.category} ${a.percent}% use ho gaya`,
+              { duration: 6000 }
+            );
+            showBudgetNotification(a, user?.currency || "INR");
+          });
+        }
       }
       onOpenChange(false);
       onDone?.();

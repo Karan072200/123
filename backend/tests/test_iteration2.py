@@ -55,7 +55,9 @@ class TestEditTransaction:
             "category": "Food", "note": "TEST_original"
         })
         assert r.status_code == 200
-        txn = r.json()
+        body = r.json()
+        # v3: POST /transactions returns {transaction, budget_alerts}
+        txn = body.get("transaction", body)
         txn_id = txn["id"]
 
         # patch
@@ -86,7 +88,8 @@ class TestEditTransaction:
             "account_id": account_id, "type": "expense", "amount": 50.0,
             "category": "Food", "note": "TEST_move"
         })
-        txn_id = r.json()["id"]
+        body = r.json()
+        txn_id = body.get("transaction", body)["id"]
 
         # patch account
         r = session.patch(f"{API}/transactions/{txn_id}", json={"account_id": acc2["id"]})
@@ -202,8 +205,8 @@ class TestBudgets:
         assert b["amount"] == 7000
 
     def test_budget_progress_calculation(self, session, account_id):
-        # Create budget on unique cat
-        cat = "TEST_Progress"
+        # Create budget on unique cat (unique per run to avoid data pollution)
+        cat = f"TEST_Progress_{uuid.uuid4().hex[:6]}"
         r = session.post(f"{API}/budgets", json={"category": cat, "amount": 1000})
         assert r.status_code == 200
 
@@ -213,7 +216,7 @@ class TestBudgets:
             "category": cat, "note": "TEST_progress_txn"
         })
         assert r.status_code == 200
-        txn_id = r.json()["id"]
+        txn_id = r.json().get("transaction", r.json())["id"]
 
         r = session.get(f"{API}/budgets")
         b = next(x for x in r.json() if x["category"] == cat)

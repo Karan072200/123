@@ -52,3 +52,42 @@ export function formatApiError(detail) {
   if (detail && typeof detail.msg === "string") return detail.msg;
   return String(detail);
 }
+
+// Notification helpers for budget breach alerts
+export async function ensureNotificationPermission() {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  const p = await Notification.requestPermission();
+  return p === "granted";
+}
+
+export function showBudgetNotification(alert, currency = "INR") {
+  const symbol = currencySymbol(currency);
+  const title =
+    alert.level === "over"
+      ? `Budget cross ho gaya: ${alert.category}!`
+      : `Budget alert: ${alert.category}`;
+  const body =
+    alert.level === "over"
+      ? `${symbol}${alert.spent} / ${symbol}${alert.budget} (${alert.percent}%) — limit paar!`
+      : `${symbol}${alert.spent} / ${symbol}${alert.budget} (${alert.percent}%) — budget khatam hone wala hai.`;
+  if (typeof window === "undefined") return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    // Via SW when available (works even if tab lost focus)
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.showNotification(title, {
+          body, icon: "/icon-192.png", badge: "/icon-192.png",
+          tag: `budget-${alert.category}`,
+          data: { url: "/budgets" },
+        });
+      });
+    } else {
+      new Notification(title, { body, icon: "/icon-192.png" });
+    }
+  } catch (e) {
+    console.warn("notification failed:", e?.message);
+  }
+}
