@@ -1,0 +1,26 @@
+{
+  "summary": "First-finish smoke test of PaisaBook. Backend health, auth (register/login/me), accounts, transactions, udhaar, analytics summary, AI insights all working. Frontend: landing loads, protected /dashboard redirects to /login, login with demo creds works, Add Transaction dialog creates txn (recent-txn count went 1->2), Reports page renders and AI insights returns headline+summary+tips.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "GET /api/ health -> 200",
+    "POST /api/auth/register with fresh email -> 200 + token",
+    "POST /api/auth/login demo@paisabook.com -> 200 + token + cookie",
+    "GET /api/auth/me with cookie -> 200 correct user",
+    "GET /api/accounts without auth -> 401 (protection works)",
+    "GET /api/accounts with cookie -> 200 with balance computed (55000 = 5000 opening + 50000 income)",
+    "POST /api/udhaar dene -> 200",
+    "POST /api/ai/insights -> 200 with headline/summary/tips",
+    "GET /api/analytics/summary -> correct totals (income 50000, per_account_type.savings 55000)",
+    "Landing / loads with login CTAs",
+    "Unauth /dashboard redirects to /login",
+    "Login form (data-testid) submits and lands on /dashboard",
+    "Add Transaction dialog: expense 250 created via dashboard-add-transaction-btn, recent-txn list grew from 1 -> 2",
+    "Reports page: get-ai-insights-btn triggers /api/ai/insights, ai-headline renders ('Aapka Financial Snapshot'), tips list rendered, monthly bar chart shown"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "Deferred (not tested exhaustively in first-finish): currency switcher PATCH, account delete cascade, txn filters/search/delete on /transactions page, udhaar settle/remind/delete flows, data isolation across two users, register form UI end-to-end. Backend seed data already contained HDFC Savings account + 50000 income txn from prior smoke, so income stat came from that (verified via analytics summary and AI insights numbers)."
+}

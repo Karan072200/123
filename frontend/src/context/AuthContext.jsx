@@ -1,0 +1,66 @@
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { http, formatApiError } from "@/lib/api";
+
+const AuthCtx = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null); // null=checking, false=guest, obj=logged
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await http.get("/auth/me");
+        setUser(data);
+      } catch {
+        setUser(false);
+      }
+    })();
+  }, []);
+
+  const login = async (email, password) => {
+    setError("");
+    try {
+      const { data } = await http.post("/auth/login", { email, password });
+      setUser(data);
+      return true;
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+      return false;
+    }
+  };
+
+  const register = async (name, email, password, currency = "INR") => {
+    setError("");
+    try {
+      const { data } = await http.post("/auth/register", { name, email, password, currency });
+      setUser(data);
+      return true;
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || e.message);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await http.post("/auth/logout");
+    } catch (e) {
+      // ignore
+    }
+    setUser(false);
+  };
+
+  const setCurrency = async (currency) => {
+    await http.patch("/auth/currency", { currency });
+    setUser((u) => ({ ...u, currency }));
+  };
+
+  return (
+    <AuthCtx.Provider value={{ user, login, register, logout, error, setCurrency }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthCtx);
