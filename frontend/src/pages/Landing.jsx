@@ -104,6 +104,22 @@ export default function Landing() {
         <Feature icon={Users} title="Udhaar Tracker"
           desc="Paise lene hai kisse, dene hai kisko — sab yaad rahega. Reminders bhi." />
       </section>
+
+      <footer className="max-w-6xl mx-auto px-6 pb-10 border-t border-[#E7E5DF] pt-8">
+        <div className="text-xs text-[#78716C] mb-3">
+          <b>Disclaimer:</b> Apka Munim ek personal finance tracking tool hai. Investment, tax ya
+          legal advice provide nahi karta. Zaruri financial decisions ke liye qualified professional
+          se consult karo.
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-3 text-xs text-[#78716C]">
+          <div>© 2026 Apka Munim · Made with ♥ in India</div>
+          <div className="flex items-center gap-4">
+            <Link to="/privacy" data-testid="footer-privacy-link" className="hover:text-[#2A4F4F]">Privacy</Link>
+            <Link to="/terms" data-testid="footer-terms-link" className="hover:text-[#2A4F4F]">Terms</Link>
+            <a href="mailto:support@apkamunim.app" className="hover:text-[#2A4F4F]">Contact</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

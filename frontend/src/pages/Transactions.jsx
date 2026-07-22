@@ -15,6 +15,7 @@ export default function Transactions() {
   const [txns, setTxns] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [open, setOpen] = useState(false);
+  const [openSms, setOpenSms] = useState(false);
   const [editing, setEditing] = useState(null);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");

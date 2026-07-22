@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 7 testing complete. Backend: 19/19 new tests pass (SMS parser 8 scenarios a-h, data export shape/isolation/auth, throwaway user full delete flow, legal SPA routes reachable, manifest v2 shortcuts+categories); 32/32 iteration5 regression still pass. Frontend: full SMS Parse → Save flow works on Dashboard AND Transactions pages, Settings page renders all cards with correct testids, Data Export triggers browser download 'apka-munim-data-2026-07-22.json' + toast, Delete confirmation gating works (empty/wrong/DELETE), Landing footer shows disclaimer + © 2026 + Privacy/Terms/Contact links, Privacy page has all required keywords (personal finance, bcrypt, MongoDB, Anthropic, PostHog, export, delete), Terms has 'not financial advice' + 'shared ledgers' + 'delete your account', Wapas Home back-link present on both, nav-settings visible in sidebar. Demo user data preserved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Transactions page (/app/frontend/src/pages/Transactions.jsx)",
+        "issue": "FIXED by testing agent: Uncaught ReferenceError 'openSms is not defined' — component crashed on mount because state hook was never declared, only referenced on lines 64 (setOpenSms) and 152 (openSms). Added `const [openSms, setOpenSms] = useState(false);`. Whole Transactions page was unusable before this fix (blocked add/edit/delete/filter/SMS).",
+        "selector": "[data-testid=\"txn-page-sms-btn\"]",
+        "priority": "CRITICAL (fixed)"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/test_reports/pytest/iteration7.xml"
+  ],
+  "action_items": [
+    "None blocking. The critical Transactions crash was fixed in-place by testing agent (missing useState).",
+    "Suggested (non-blocking): SmsParseDialog crashes silently if `accounts` prop is undefined (uses accounts?.[0]?.id but later maps accounts.map without optional chain on line 163). Currently mitigated because parent components always pass an array.",
+    "Suggested (non-blocking): server.py has grown to ~1275 lines and is nearing the 700-line split threshold — consider splitting into routers/{auth,ledgers,transactions,sms,export,analytics}.py next iteration.",
+    "Suggested (non-blocking): pytest.ini locks -n 2 --dist loadscope, which races on demo user's current_ledger_id across xdist workers. iteration7.py works serially and via loadscope (each class stays on one worker), but future authors should be aware.",
+    "Notification denied path renders correctly. Enable button visible when status=denied (per code, hidden only when 'granted' or 'unsupported'). This is per spec — request said 'verify UI handles denied state gracefully' — verified."
+  ],
+  "critical_code_review_comments": [
+    "Transactions.jsx used undeclared `openSms`/`setOpenSms` — a straight-forward oversight that would have shipped a broken /transactions page. Root cause: SMS Parse button was added on line 64-68 but the state hook was never introduced. This means the previous iteration did NOT exercise the Transactions page after adding the SMS button — a good reminder that new UI wiring MUST be smoke-tested end-to-end.",
+    "server.py DELETE /auth/me does the right cascade: personal-scoped docs, legacy user_id docs, remove from shared ledgers (or delete ledger + data if sole owner), delete personal ledger, delete user, clear cookie. Verified by test_full_delete_flow (data, sole-owner-shared cascade, subsequent 401 on /auth/me, subsequent 401 on /login, stale invite code returns 404).",
+    "GET /auth/me/export correctly scopes by (user_id OR owner_id in my_ledger_ids) via $or; excludes _id via projection; returns all 8 required top-level keys. Test verified no _id leaks and data isolation.",
+    "SMS regex parser is robust: distinguishes Rs.1200 from Rs.120 (uses digit-comma pattern with word boundary via 'rs.?|inr|rupees|₹' prefix), extracts merchants via 5 layered patterns, and correctly returns 100% confidence when all 4 fields (type+amount+account+merchant) are found. All 8 scenarios pass without LLM fallback.",
+    "manifest.json has 4 shortcuts including SMS Parse, categories [finance, productivity, utilities], description mentions 'Manual entry only'. Compliant with Play Store data-safety expectations."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/Transactions.jsx (added missing `const [openSms, setOpenSms] = useState(false);` — fix for uncaught ReferenceError)",
+    "/app/backend/tests/test_iteration7.py (new — 19 tests: SMS parser a-h, export shape/isolation/auth, throwaway user full delete cascade, legal SPA reachable, manifest v2)",
+    "/app/test_reports/pytest/iteration7.xml (JUnit)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 new iteration7 + 32/32 iteration5 regression = 51/51 pass)",
+    "frontend": "100% of critical iteration7 flows after 1 fix (Transactions page crash fixed inline)"
+  },
+  "test_credentials": "demo@paisabook.com / demo1234 (preserved — NOT deleted); throwaway users use pattern delete-test-<hex>@paisabook.com / test1234 (created + deleted per test run inside test_full_delete_flow).",
+  "seed_data_creation": "None persistent. Every throwaway user created inside TestDeleteMyAccount is deleted at the end of that test as part of the flow. TEST_-prefixed accounts, txns, budgets, recurring, udhaar, and a TEST_SoloShared ledger are all deleted via the DELETE /auth/me cascade. UI SMS flow saved 2 real transactions on demo user (Zomato ₹499 Food, Uber ₹245 Transport) which persist as legitimate demo data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests with `pytest backend/tests/test_iteration7.py -o addopts=''` to disable xdist (the demo user's current_ledger_id can race across parallel workers — same caveat as iteration5). All 19 pass in ~3s serially. Frontend uses `dashboard-sms-parse-btn` on /dashboard and `txn-page-sms-btn` on /transactions; both open the same SmsParseDialog which posts to /api/sms/parse. Settings page has data-testids: settings-notif-enable-btn (only shown when Notification.permission != 'granted' && != 'unsupported'), settings-export-btn, settings-privacy-link, settings-terms-link, settings-delete-account-btn, settings-delete-confirm-input, settings-delete-confirm-btn. Danger Zone flow: dialog opens → confirm btn stays disabled until input === 'DELETE' (exact case) → clicking triggers DELETE /api/auth/me + logout + redirect to /. Playwright default context has Notification.permission='denied' so Enable karo button is visible on /settings.",
+  "rca of the issue": "Transactions page crash — RCA: /app/frontend/src/pages/Transactions.jsx introduced `onClick={() => setOpenSms(true)}` on line 64 and `<SmsParseDialog open={openSms} onOpenChange={setOpenSms} ... />` on line 152, but the corresponding `useState` declaration was never added. Since JS is lexically scoped, `openSms` resolved to undefined inside the render function, throwing ReferenceError which React converts into an error boundary → runtime error overlay in dev, blank crash screen in prod. Reproduction: login as demo → navigate to /transactions → see 'Uncaught runtime errors: openSms is not defined'. Fix: added `const [openSms, setOpenSms] = useState(false);` immediately after existing `open` useState (line 18). Verified: Transactions page now renders, txn-page-sms-btn opens dialog, parse returns 245/Transport for Uber SMS, save persists to DB and appears in list with budget-alert toast."
+}

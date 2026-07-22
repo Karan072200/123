@@ -296,6 +296,60 @@ async def update_currency(payload: dict, user=Depends(get_current_user)):
     return {"ok": True, "currency": currency}
 
 
+@api.get("/auth/me/export")
+async def export_my_data(user=Depends(get_current_user)):
+    """Export ALL of the current user's data across their ledgers (compliance/GDPR-ready)."""
+    uid = user["id"]
+    my_ledgers = await db.ledgers.find({"members": uid}, {"_id": 0}).to_list(50)
+    ledger_ids = [l["id"] for l in my_ledgers]
+
+    async def _all(coll):
+        return await db[coll].find({"$or": [{"user_id": uid}, {"owner_id": {"$in": ledger_ids}}]}, {"_id": 0}).to_list(10000)
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "user": {
+            "id": user["id"], "email": user["email"], "name": user["name"],
+            "currency": user.get("currency", "INR"),
+            "created_at": user.get("created_at"),
+        },
+        "ledgers": my_ledgers,
+        "accounts": await _all("accounts"),
+        "transactions": await _all("transactions"),
+        "udhaar": await _all("udhaar"),
+        "recurring": await _all("recurring"),
+        "budgets": await _all("budgets"),
+    }
+
+
+@api.delete("/auth/me")
+async def delete_my_account(response: Response, user=Depends(get_current_user)):
+    """Permanently delete the current user's account and all their data (Play Store 'Data Safety' compliance)."""
+    uid = user["id"]
+    # Delete personal-scoped data
+    personal_ledger_id = user["personal_ledger_id"]
+    for coll in ("accounts", "transactions", "udhaar", "recurring", "budgets"):
+        await db[coll].delete_many({"owner_id": personal_ledger_id})
+        # legacy docs
+        await db[coll].delete_many({"user_id": uid, "owner_id": {"$exists": False}})
+    # Remove from shared ledgers
+    shared = await db.ledgers.find({"members": uid, "type": "shared"}, {"_id": 0}).to_list(50)
+    for lg in shared:
+        if lg.get("owner_user_id") == uid and len(lg.get("members", [])) == 1:
+            # sole owner: delete ledger + data
+            for coll in ("accounts", "transactions", "udhaar", "recurring", "budgets"):
+                await db[coll].delete_many({"owner_id": lg["id"]})
+            await db.ledgers.delete_one({"id": lg["id"]})
+        else:
+            await db.ledgers.update_one({"id": lg["id"]}, {"$pull": {"members": uid}})
+    # Delete personal ledger
+    await db.ledgers.delete_one({"id": personal_ledger_id})
+    # Delete user
+    await db.users.delete_one({"id": uid})
+    response.delete_cookie("access_token", path="/")
+    return {"ok": True}
+
+
 # ----- Ledgers (Family / Shared) -----
 async def _decorate_ledger(lg: dict, user_id: str) -> dict:
     """Attach member details to a ledger doc."""

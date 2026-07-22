@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
-  BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2,
+  BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,7 @@ const navItems = [
   { to: "/budgets", label: "Budgets", icon: Target, testid: "nav-budgets" },
   { to: "/ledgers", label: "Ledgers", icon: Users2, testid: "nav-ledgers" },
   { to: "/reports", label: "Reports & AI", icon: BarChart3, testid: "nav-reports" },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings" },
 ];
 
 function LedgerSwitcher() {
