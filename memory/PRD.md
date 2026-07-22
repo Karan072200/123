@@ -1,51 +1,69 @@
-# PaisaBook — Product Requirements
+# Apka Munim — Product Requirements
 
-## Original Problem Statement
+## Original Problem Statement (User's words)
 > "yaar mujhe ek aisa aaplication bana kr do jisme mai apna kitne paise aaye kitne gaye kitne kisse lene hai kitne kisko dene hai kitne savings account mai aate kitne current account mai"
 
-Hinglish personal finance tracker.
+## Product Name
+**Apka Munim** (renamed from PaisaBook in v4). AI coach = **Munim Ji**.
 
-## User Choices (all iterations)
-- Auth: JWT email/password
-- Multi-currency (INR default + USD/EUR/GBP/AED)
-- AI insights via Emergent LLM (Claude Sonnet 4.5) with deterministic fallback
-- Theme: Organic & Earthy light (+ dark mode toggle)
-- PWA installable
-- Family/Shared Ledger
+## Live URLs
+- Preview: https://cash-flow-hub-172.preview.emergentagent.com
+- Production: https://cash-flow-hub-172.emergent.host + https://kawachine.com
+
+## Architecture
+- Backend: FastAPI + Motor (MongoDB) + JWT (httpOnly cookie) + bcrypt
+- Frontend: React 19 + React Router 7 + Shadcn UI + Recharts + Sonner
+- LLM: emergentintegrations · Claude Sonnet 4.5 (with deterministic fallback)
+- Deployment: Emergent platform (web + PWA)
+
+## Feature Roadmap
+### v1 MVP — Landing, Auth, Accounts, Transactions, Udhaar, Dashboard, Reports, AI PaisaBuddy
+### v2 — Edit transaction, Recurring, Budget goals
+### v2.1 PWA — Manifest, service worker, icons, iOS/Android install prompt
+### v3 — Dark mode, CSV/PDF export, Budget breach notifications, Family/Shared Ledger
+### v4 — Rename to **Apka Munim**, UPI/Bank SMS Parser (regex + LLM fallback)
+### v5 (this iteration) — App Store readiness (free)
+  - **Privacy Policy page** (/privacy) — finance-app compliant
+  - **Terms of Service page** (/terms) — includes "not financial advice" clause
+  - **Settings page** (/settings) — Data Export (JSON), Account Delete, Notification permission, Legal links
+  - **GET /api/auth/me/export** — full user data JSON dump
+  - **DELETE /api/auth/me** — permanent account + data cascade
+  - Landing footer with disclaimer + Privacy/Terms/Contact links
+  - Manifest updated with SMS Parse shortcut + finance category emphasis
 
 ## Data Model
-- users, ledgers (personal + shared), accounts, transactions, udhaar, recurring, budgets
-- All resources scoped by `owner_id` (ledger_id). Users auto-get a `pl_<uid>` personal ledger.
+- `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id
+- `ledgers` — id, name, type (personal/shared), owner_user_id, members[], invite_code
+- `accounts`, `transactions`, `udhaar`, `recurring`, `budgets` — all scoped by owner_id (ledger_id)
 
-## Feature history
-### v1 MVP (Feb 2026)
-Landing, Auth, Accounts, Transactions, Udhaar, Dashboard, Reports (charts), AI PaisaBuddy.
+## App Store Readiness Checklist
+- [x] Privacy Policy URL (finance-app compliant)
+- [x] Terms of Service URL
+- [x] Financial disclaimer ("not investment/tax/legal advice")
+- [x] Data Export (user self-service — GDPR & Play Store Data Safety)
+- [x] Account Delete (user self-service — GDPR & Play Store Data Safety)
+- [x] Notification permission opt-in
+- [x] PWA manifest with description, categories, shortcuts
+- [x] Maskable icons (192/512)
+- [x] Contact email (support@apkamunim.app)
+- [ ] Google Play Developer account ($25 one-time) — user action
+- [ ] Apple Developer Program ($99/year) — user action
+- [ ] Mobile Agent (Expo/React Native) native app — requires paid Emergent subscription
+- [ ] TWA via Bubblewrap for Android-only — alternative path
+- [ ] Business verification docs (Apple 5.4 finance guideline)
+- [ ] App store screenshots
 
-### v2 (Feb 2026)
-Edit transaction, Recurring transactions, Budget goals per category.
+## Testing Coverage (iteration 7)
+- Backend: 51/51 pass (SMS parser 8 scenarios + export + delete cascade + regression)
+- Frontend: full Playwright end-to-end verified
 
-### v2.1 PWA (Feb 2026)
-Manifest + service worker + icons + iOS/Android meta + install prompt component.
-
-### v2.2 Code quality (Feb 2026)
-Test creds via env, stable React keys, console.warn on empty catches.
-
-### v3 (Feb 2026)
-- **Dark Mode** — sidebar toggle, `html.dark` class, localStorage persistence, meta theme-color update, index.css `.dark` overrides for hardcoded hex-arbitrary color classes
-- **CSV/PDF Monthly Export** — reportlab-driven PDF with summary tables, category-colored transactions; CSV with standard headers
-- **Budget Breach Notifications** — POST /transactions response includes `budget_alerts[]`; frontend shows toast + browser Notification via service worker `showNotification`
-- **Family / Shared Ledger** — ledgers collection with 6-char invite codes, join/switch/leave, data isolation via `owner_id` filter, auto-backfill on first `/auth/me` after upgrade
-
-## Backlog (P1/P2)
-- P1: SMS/UPI bank message parser to auto-create transactions
-- P1: Voice input ("add 500 rupees chai")
-- P1: Bill/receipt photo attachments
-- P2: Multi-currency FX conversion with live rates
-- P2: Weekly AI digest via WhatsApp/email
-- P2: Scheduled reminders for udhaar due dates
-- P2: Ownership transfer for shared ledgers
-- P2: Server-side push (VAPID) for background budget alerts when app is closed
-
-## Next Action Items
-- Ship SMS/UPI parser (biggest UX win — no manual entry needed)
-- Extract server.py routers per resource (~1050 lines — nearing complexity threshold)
+## Backlog / Next Ideas
+- Splittin server.py into resource routers (~1275 LOC now)
+- Ownership transfer for shared ledgers
+- Bulk SMS parsing (paste multiple, batch add)
+- Voice input for transactions
+- Bill/receipt photo attachments with OCR
+- Weekly WhatsApp AI digest
+- Multi-currency live FX conversion
+- Server-side push (VAPID) for offline notifications
+- Mobile native app via Emergent Mobile Agent
