@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   const load = async () => {
     // Auto-run recurring transactions first (safe to call repeatedly)
-    try { await http.post("/recurring/run"); } catch { /* ignore */ }
+    try { await http.post("/recurring/run"); } catch (e) { console.warn("recurring/run failed:", e?.message); }
     const [s, a, t] = await Promise.all([
       http.get("/analytics/summary").then((r) => r.data),
       http.get("/accounts").then((r) => r.data),

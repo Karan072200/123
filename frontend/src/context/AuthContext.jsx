@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await http.post("/auth/logout");
     } catch (e) {
-      // ignore
+      console.warn("logout call failed:", e?.message);
     }
     setUser(false);
   };

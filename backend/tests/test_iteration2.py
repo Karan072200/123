@@ -17,8 +17,8 @@ if not BASE_URL:
 
 API = f"{BASE_URL}/api"
 
-DEMO_EMAIL = "demo@paisabook.com"
-DEMO_PASSWORD = "demo1234"
+DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@paisabook.com")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo1234")
 
 
 @pytest.fixture(scope="module")

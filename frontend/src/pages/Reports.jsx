@@ -71,7 +71,7 @@ export default function Reports() {
             {ai.tips?.length > 0 && (
               <ul className="mt-3 space-y-2" data-testid="ai-tips-list">
                 {ai.tips.map((t, i) => (
-                  <li key={i} className="flex gap-3 text-sm text-[#1C1917]">
+                  <li key={`tip-${i}-${t.slice(0, 20)}`} className="flex gap-3 text-sm text-[#1C1917]">
                     <div className="w-6 h-6 rounded-full bg-[#4A7C59]/15 text-[#3B6446] flex items-center justify-center text-xs font-bold flex-shrink-0">
                       {i + 1}
                     </div>
@@ -143,8 +143,8 @@ export default function Reports() {
                 <PieChart>
                   <Pie data={summary.expense_by_category} dataKey="total" nameKey="category"
                     innerRadius={45} outerRadius={90} paddingAngle={2}>
-                    {summary.expense_by_category.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    {summary.expense_by_category.map((c, i) => (
+                      <Cell key={c.category} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(v) => formatMoney(v, cur)}
