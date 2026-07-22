@@ -33,12 +33,20 @@ try:
 except Exception:
     _HAS_ANTHROPIC = False
 
+try:
+    from groq import AsyncGroq
+    _HAS_GROQ = True
+except Exception:
+    _HAS_GROQ = False
+
 # ----- Config -----
 JWT_ALGORITHM = "HS256"
 JWT_SECRET = os.environ["JWT_SECRET"]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-5-20250929")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -49,13 +57,13 @@ app = FastAPI(title="Apka Munim API")
 
 async def llm_json_call(system_msg: str, user_msg: str, session_id: str) -> Optional[str]:
     """
-    Portable LLM call — prefers direct Anthropic (for self-hosted), falls back to
-    Emergent LLM Key (for Emergent platform). Returns raw text or None if no key set.
+    Portable LLM call. Priority: Anthropic → Groq (free) → Emergent.
+    Returns raw text or None if no provider is configured.
     """
     if ANTHROPIC_API_KEY and _HAS_ANTHROPIC:
         try:
-            client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-            resp = await client.messages.create(
+            ac = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+            resp = await ac.messages.create(
                 model=LLM_MODEL,
                 max_tokens=1024,
                 system=system_msg,
@@ -64,6 +72,21 @@ async def llm_json_call(system_msg: str, user_msg: str, session_id: str) -> Opti
             return resp.content[0].text
         except Exception as e:
             logging.warning("Anthropic direct call failed: %s", e)
+
+    if GROQ_API_KEY and _HAS_GROQ:
+        try:
+            gc = AsyncGroq(api_key=GROQ_API_KEY)
+            resp = await gc.chat.completions.create(
+                model=GROQ_MODEL,
+                max_tokens=1024,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            logging.warning("Groq call failed: %s", e)
 
     if EMERGENT_LLM_KEY and _HAS_EMERGENT:
         try:
