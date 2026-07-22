@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 regression re-test of iteration-2 features (Edit Txn PATCH, Recurring CRUD/toggle/run, Budgets CRUD/upsert/progress, sidebar nav, dashboard auto-run). Backend: 17/17 pytest passed. Frontend: all critical UI flows verified end-to-end via Playwright with no errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/iteration3.xml"
+  ],
+  "passed_backend": [
+    "TestEditTransaction (2/2) — PATCH updates amount+note, PATCH account_id updates account_name",
+    "TestRecurring (8/8) — create monthly, list, run returns created count, auto-gen txn has recurring_id + correct category/amount, toggle off/on, delete, run when no active",
+    "TestBudgets (4/4) — create, upsert same category updates amount, spent/remaining/percent calc (300/1000 = 30%), delete",
+    "TestAuthGuards (3/3) — /recurring, /budgets, /recurring/run all 401 without token"
+  ],
+  "passed_frontend": [
+    "Login demo@paisabook.com → /dashboard redirect",
+    "Sidebar shows nav-recurring and nav-budgets (both present with correct testids)",
+    "/recurring page renders existing Netflix Bills·HDFC Savings ₹1,500 monthly recurring card with Active switch",
+    "'Run now' button triggers POST /api/recurring/run and displays toast '0 transactions auto-add hue' (no past-due), no console errors",
+    "/budgets page renders 'This Month' summary card + Food budget card (₹1,076.77 / ₹8,000, 13% used, green bar); overall summary reflects total",
+    "Budget Add: dialog opens → Shopping category → ₹4,444 → Save → card count 1→2 → toast 'Budget set ho gaya!'",
+    "Budget Delete: trash icon + confirm → card removed → count back to 1",
+    "Transactions page has 24 pencil buttons (data-testid txn-edit-{id}); clicking first opens AddTransactionDialog pre-filled with amount '77.77' (from previous iteration edit)",
+    "Update flow: change amount to 999.99 → 'Update karo' → dialog closes → PATCH persists (verified indirectly: Food budget spent recomputed from ₹1,076.77 → ₹1,998.99, delta = 922.22 = 999.99-77.77) confirming end-to-end integration with budget aggregation"
+  ],
+  "critical_code_review_comments": [
+    "server.py update_recurring uses raw body: dict but allowlists keys; safe from injection though a RecurringUpdate Pydantic model would be cleaner.",
+    "_next_due for monthly correctly clamps day to min(day_of_month or from_dt.day, 28) to avoid Feb overflow.",
+    "Recurring run capped at 24 iterations per rule per invocation — good safety loop guard.",
+    "Budgets upsert relies on unique index (user_id, category) declared in startup — matches upsert logic.",
+    "Percent calc guards against amount==0 division.",
+    "Dashboard.load() calls POST /api/recurring/run inside try/catch — silent, non-blocking (correct behavior for empty rules case).",
+    "AddTransactionDialog useEffect on [type] correctly preserves category during edit via isEdit flag."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "demo@paisabook.com / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests use TEST_-prefixed data with cleanup. Existing seeded HDFC Savings, Food budget (₹8,000), and Netflix Bills monthly recurring rule remain intact. Note: Food budget 'spent' value increased during frontend edit test (from txn amount 77.77 → 999.99) — this reflects real data change from PATCH but only affects demo user's current-month spent aggregation; not a regression.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 confirms iteration-2 features (Edit Txn, Recurring CRUD+Run+Toggle, Budgets CRUD+Upsert+Progress, sidebar nav, dashboard auto-run) are all 100% functional both API and UI. Regression test file at /app/backend/tests/test_iteration2.py can be reused for future iterations. No open bugs.",
+  "rca of the issue": "N/A — no bugs found."
+}
