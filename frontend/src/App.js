@@ -14,6 +14,7 @@ import Recurring from "@/pages/Recurring";
 import Budgets from "@/pages/Budgets";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
+import InstallPrompt from "@/components/InstallPrompt";
 
 const Protected = ({ children }) => {
   const { user } = useAuth();
@@ -41,6 +42,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <Toaster position="top-right" richColors />
+          <InstallPrompt />
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
