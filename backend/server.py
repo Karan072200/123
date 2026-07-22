@@ -431,11 +431,6 @@ async def compute_budget_alerts(user: dict, category: str) -> list:
         return []
     now = datetime.now(timezone.utc)
     prefix = now.strftime("%Y-%m")
-    pipeline = [
-        {"$match": {"owner_id": user["current_ledger_id"], "type": "expense", "category": category}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
-    ]
-    # naive: scan the month
     rows = await db.transactions.find(
         {"owner_id": user["current_ledger_id"], "type": "expense", "category": category},
         {"_id": 0, "amount": 1, "date": 1},
