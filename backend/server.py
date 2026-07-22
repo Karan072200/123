@@ -20,19 +20,63 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 
-# Emergent LLM
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# LLM providers — supports both Emergent LLM Key and direct Anthropic API key
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    _HAS_EMERGENT = True
+except Exception:
+    _HAS_EMERGENT = False
+
+try:
+    from anthropic import AsyncAnthropic
+    _HAS_ANTHROPIC = True
+except Exception:
+    _HAS_ANTHROPIC = False
 
 # ----- Config -----
 JWT_ALGORITHM = "HS256"
 JWT_SECRET = os.environ["JWT_SECRET"]
-EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-5-20250929")
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Apka Munim API")
+
+
+async def llm_json_call(system_msg: str, user_msg: str, session_id: str) -> Optional[str]:
+    """
+    Portable LLM call — prefers direct Anthropic (for self-hosted), falls back to
+    Emergent LLM Key (for Emergent platform). Returns raw text or None if no key set.
+    """
+    if ANTHROPIC_API_KEY and _HAS_ANTHROPIC:
+        try:
+            client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+            resp = await client.messages.create(
+                model=LLM_MODEL,
+                max_tokens=1024,
+                system=system_msg,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            return resp.content[0].text
+        except Exception as e:
+            logging.warning("Anthropic direct call failed: %s", e)
+
+    if EMERGENT_LLM_KEY and _HAS_EMERGENT:
+        try:
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=session_id,
+                system_message=system_msg,
+            ).with_model("anthropic", LLM_MODEL)
+            return await chat.send_message(UserMessage(text=user_msg))
+        except Exception as e:
+            logging.warning("Emergent LLM call failed: %s", e)
+
+    return None
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
@@ -760,37 +804,36 @@ async def parse_sms(body: SmsParseIn, user=Depends(get_current_user)):
     llm_used = False
     if parsed["confidence"] < 0.5 or parsed["amount"] is None or not parsed["type"]:
         try:
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"sms-{user['id']}",
-                system_message=(
+            raw = await llm_json_call(
+                system_msg=(
                     "You are an Indian bank/UPI SMS parser. Given raw SMS text, extract structured JSON. "
                     "Return ONLY a JSON object with keys: type ('income' or 'expense'), amount (number), "
                     "merchant (string, empty if unknown), account_last4 (4-digit string or empty). "
                     "No markdown, no code fences, JSON only."
                 ),
-            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-            msg = UserMessage(text=f"Parse this SMS: {text}")
-            raw = await chat.send_message(msg)
-            import json
-            s = raw.strip()
-            if s.startswith("```"):
-                s = s.strip("`")
-                if s.lower().startswith("json"):
-                    s = s[4:].strip()
-            i, j = s.find("{"), s.rfind("}")
-            if i != -1 and j != -1:
-                data = json.loads(s[i:j + 1])
-                if not parsed["amount"] and data.get("amount"):
-                    parsed["amount"] = float(data["amount"])
-                if not parsed["type"] and data.get("type"):
-                    parsed["type"] = data["type"]
-                if not parsed["merchant"] and data.get("merchant"):
-                    parsed["merchant"] = data["merchant"]
-                if not parsed["account_last4"] and data.get("account_last4"):
-                    parsed["account_last4"] = data["account_last4"]
-                parsed["confidence"] = max(parsed["confidence"], 0.75)
-                llm_used = True
+                user_msg=f"Parse this SMS: {text}",
+                session_id=f"sms-{user['id']}",
+            )
+            if raw:
+                import json
+                s = raw.strip()
+                if s.startswith("```"):
+                    s = s.strip("`")
+                    if s.lower().startswith("json"):
+                        s = s[4:].strip()
+                i, j = s.find("{"), s.rfind("}")
+                if i != -1 and j != -1:
+                    data = json.loads(s[i:j + 1])
+                    if not parsed["amount"] and data.get("amount"):
+                        parsed["amount"] = float(data["amount"])
+                    if not parsed["type"] and data.get("type"):
+                        parsed["type"] = data["type"]
+                    if not parsed["merchant"] and data.get("merchant"):
+                        parsed["merchant"] = data["merchant"]
+                    if not parsed["account_last4"] and data.get("account_last4"):
+                        parsed["account_last4"] = data["account_last4"]
+                    parsed["confidence"] = max(parsed["confidence"], 0.75)
+                    llm_used = True
         except Exception as e:
             logger.warning("SMS LLM fallback failed: %s", e)
 
@@ -1070,14 +1113,13 @@ async def ai_insights(user=Depends(get_current_user)):
     )
 
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+        raw = await llm_json_call(
+            system_msg=system_msg,
+            user_msg=f"Currency: {currency}. Data:\n{context}",
             session_id=f"insights-{user['id']}",
-            system_message=system_msg,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-        msg = UserMessage(text=f"Currency: {currency}. Data:\n{context}")
-        raw = await chat.send_message(msg)
+        )
+        if not raw:
+            raise RuntimeError("No LLM provider configured")
 
         import json
         text = raw.strip()
