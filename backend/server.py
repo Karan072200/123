@@ -19,6 +19,8 @@ from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 
 # LLM providers — supports both Emergent LLM Key and direct Anthropic API key
 try:
@@ -42,6 +44,7 @@ except Exception:
 # ----- Config -----
 JWT_ALGORITHM = "HS256"
 JWT_SECRET = os.environ["JWT_SECRET"]
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -344,6 +347,56 @@ async def login(body: LoginIn, response: Response):
                         domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
+
+
+class GoogleAuthIn(BaseModel):
+    credential: str
+
+
+@api.post("/auth/google")
+async def google_auth(body: GoogleAuthIn, response: Response):
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.credential, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    email = idinfo["email"].lower()
+    name = idinfo.get("name", email.split("@")[0])
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        uid = str(uuid.uuid4())
+        personal_id = f"pl_{uid}"
+        now = datetime.now(timezone.utc).isoformat()
+        await db.users.insert_one({
+            "id": uid,
+            "email": email,
+            "name": name,
+            "password_hash": None,
+            "currency": "INR",
+            "personal_ledger_id": personal_id,
+            "current_ledger_id": personal_id,
+            "created_at": now,
+        })
+        await db.ledgers.insert_one({
+            "id": personal_id,
+            "name": "Personal",
+            "type": "personal",
+            "owner_user_id": uid,
+            "members": [uid],
+            "invite_code": None,
+            "created_at": now,
+        })
+        uid_final, name_final = uid, name
+    else:
+        uid_final, name_final = user["id"], user["name"]
+
+    token = create_access_token(uid_final, email)
+    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+                        domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+    return {"id": uid_final, "email": email, "name": name_final, "token": token}
 
 
 @api.post("/auth/logout")
