@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Wallet } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Login() {
   const { login, error } = useAuth();
@@ -68,6 +69,29 @@ export default function Login() {
             </Button>
           </form>
 
+          <div className="flex items-center gap-3 my-6">
+            <div className="h-px bg-[#E7E5DF] flex-1" />
+            <span className="text-xs text-[#78716C]">YA</span>
+            <div className="h-px bg-[#E7E5DF] flex-1" />
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/google`, {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ credential: credentialResponse.credential }),
+                });
+                if (res.ok) {
+                  window.location.href = "/dashboard";
+                }
+              }}
+              onError={() => console.log("Google login failed")}
+            />
+          </div>
+
           <p className="text-sm text-[#57534E] mt-6 text-center">
             Naye ho? <Link to="/register" data-testid="login-to-register-link"
               className="text-[#2A4F4F] font-semibold hover:underline">Account banao</Link>
@@ -77,21 +101,3 @@ export default function Login() {
     </div>
   );
 }
-import { GoogleLogin } from '@react-oauth/google';
-<GoogleLogin
-  onSuccess={async (credentialResponse) => {
-    const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/google`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: credentialResponse.credential }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      // yahan apna existing "login success" logic call karo,
-      // jaise: navigate('/dashboard') ya setUser(data)
-      window.location.href = '/dashboard';
-    }
-  }}
-  onError={() => console.log('Google login failed')}
-/>
