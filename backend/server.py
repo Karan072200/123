@@ -328,7 +328,7 @@ async def register(body: RegisterIn, response: Response):
         "created_at": now,
     })
     token = create_access_token(uid, email)
-    response.delete_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         max_age=60 * 60 * 24 * 7, path="/")
     return {"id": uid, "email": email, "name": body.name, "currency": body.currency, "token": token}
 
@@ -340,7 +340,7 @@ async def login(body: LoginIn, response: Response):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user["id"], email)
-    response.delete_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         max_age=60 * 60 * 24 * 7, path="/")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
@@ -348,7 +348,7 @@ async def login(body: LoginIn, response: Response):
 
 @api.post("/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
+    response.set_cookie("access_token", path="/")
     return {"ok": True}
 
 
@@ -420,7 +420,7 @@ async def delete_my_account(response: Response, user=Depends(get_current_user)):
     await db.ledgers.delete_one({"id": personal_ledger_id})
     # Delete user
     await db.users.delete_one({"id": uid})
-    response.delete_cookie("access_token", path="/")
+    response.set_cookie("access_token", path="/")
     return {"ok": True}
 
 
