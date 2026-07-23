@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES } from "@/lib/api";
 import { Wallet } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Register() {
   const { register, error } = useAuth();
@@ -87,6 +88,29 @@ export default function Register() {
               {loading ? "Ban raha hai…" : "Account banao"}
             </Button>
           </form>
+
+          <div className="flex items-center gap-3 my-6">
+            <div className="h-px bg-[#E7E5DF] flex-1" />
+            <span className="text-xs text-[#78716C]">YA</span>
+            <div className="h-px bg-[#E7E5DF] flex-1" />
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/google`, {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ credential: credentialResponse.credential }),
+                });
+                if (res.ok) {
+                  window.location.href = "/dashboard";
+                }
+              }}
+              onError={() => console.log("Google login failed")}
+            />
+          </div>
 
           <p className="text-sm text-[#57534E] mt-6 text-center">
             Already registered? <Link to="/login" data-testid="register-to-login-link"
