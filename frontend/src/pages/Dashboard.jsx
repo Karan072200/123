@@ -61,7 +61,7 @@ export default function Dashboard() {
             Namaste, {user?.name?.split(" ")[0]}
           </div>
           <h1 className="font-heading text-3xl md:text-4xl font-bold text-[#1C1917] mt-1">
-            Aapka paisa aaj kaisa hai?
+            Aapka Hisab aaj kya bol raha hai?
           </h1>
         </div>
         <div className="flex gap-2 flex-wrap">
