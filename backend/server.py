@@ -328,7 +328,7 @@ async def register(body: RegisterIn, response: Response):
         "created_at": now,
     })
     token = create_access_token(uid, email)
-    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+    response.delete_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         max_age=60 * 60 * 24 * 7, path="/")
     return {"id": uid, "email": email, "name": body.name, "currency": body.currency, "token": token}
 
@@ -340,7 +340,7 @@ async def login(body: LoginIn, response: Response):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user["id"], email)
-    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+    response.delete_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         max_age=60 * 60 * 24 * 7, path="/")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
