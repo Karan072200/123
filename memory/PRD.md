@@ -8,7 +8,12 @@
 
 ## Live URLs
 - Preview: https://cash-flow-hub-172.preview.emergentagent.com
-- Production: https://cash-flow-hub-172.emergent.host + https://kawachine.com
+- Production (Emergent): https://cash-flow-hub-172.emergent.host + https://kawachine.com
+- **Self-Hosted (v6 - 23 Jul 2026)**:
+  - Frontend (Vercel): https://123-six-eosin.vercel.app
+  - Backend (Railway): https://123-production-e68f.up.railway.app
+  - DB: User's personal MongoDB Atlas
+  - GitHub: github.com/Karan072200/123
 
 ## Architecture
 - Backend: FastAPI + Motor (MongoDB) + JWT (httpOnly cookie) + bcrypt
@@ -30,6 +35,16 @@
   - **DELETE /api/auth/me** — permanent account + data cascade
   - Landing footer with disclaimer + Privacy/Terms/Contact links
   - Manifest updated with SMS Parse shortcut + finance category emphasis
+
+### v6 (23 Jul 2026) — Self-Hosting Migration Complete
+  - **Backend deployed to Railway** with user's own account (nixpacks.toml + railway.json + Procfile)
+  - **Frontend deployed to Vercel** with user's own account (vercel.json + .npmrc + .nvmrc)
+  - **MongoDB** connected to user's personal Atlas cluster
+  - **Groq LLM** running on user's own API key (replaced emergentintegrations)
+  - **Cross-domain cookies fix** (SameSite=None, Secure=True) — critical for Safari/iPhone
+  - **CORS** configured Railway → Vercel domain
+  - **Cost**: $0/month (Railway hobby + Vercel hobby + Atlas free)
+  - Files added: `frontend/.npmrc`, `frontend/.nvmrc`, `frontend/vercel.json` (yarn install/build)
 
 ## Data Model
 - `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id
@@ -58,7 +73,9 @@
 - Frontend: full Playwright end-to-end verified
 
 ## Backlog / Next Ideas
-- Splittin server.py into resource routers (~1275 LOC now)
+- **Push `fix-cross-domain-cookies` branch to GitHub** (SameSite=None fix — critical for Safari/iOS logins)
+- Custom domain setup on Vercel (e.g., apkamunim.com)
+- Splitting server.py into resource routers (~1275 LOC now)
 - Ownership transfer for shared ledgers
 - Bulk SMS parsing (paste multiple, batch add)
 - Voice input for transactions
