@@ -43,8 +43,20 @@
   - **Groq LLM** running on user's own API key (replaced emergentintegrations)
   - **Cross-domain cookies fix** (SameSite=None, Secure=True) — critical for Safari/iPhone
   - **CORS** configured Railway → Vercel domain
-  - **Cost**: $0/month (Railway hobby + Vercel hobby + Atlas free)
+  - **Custom domain** `apkamunim.com` connected via Namecheap → Vercel
+  - **Cost**: ₹550/year (domain only) + $0 infra (all free tiers)
   - Files added: `frontend/.npmrc`, `frontend/.nvmrc`, `frontend/vercel.json` (yarn install/build)
+
+### v7 (25 Jul 2026) — 6 New Features Added (Feature Batch 1)
+  - **🎤 Voice Input** — Web Speech API + `/api/voice/parse-transaction` regex+LLM parser. Hinglish speech → transaction dict. `VoiceInput.jsx` integrated inside AddTransactionDialog.
+  - **🎯 Financial Goals (Sapno ka Wallet)** — Full CRUD `/api/goals/*` + `Goals.jsx` page. Emoji picker, color picker, progress bars, contribute dialog with `/goals/{id}/contribute`.
+  - **💳 Subscription Tracker** — Full CRUD `/api/subscriptions/*` with monthly/quarterly/yearly cycles, auto monthly_total calc. `Subscriptions.jsx` with quick-add presets (Netflix, Spotify, Prime, etc.), pause/resume toggle.
+  - **📊 Financial Health Score** — `GET /api/analytics/health-score` returns 0-100 score + grade (A+/A/B/C/D) + Hinglish motto. Breakdown across savings/budget/udhaar/diversification/activity. `HealthScoreCard.jsx` widget with circular progress + expandable details.
+  - **🔥 Daily Streaks** — `GET /api/analytics/streak` computes current + longest streak from txn dates. `StreakCard.jsx` widget with fun message per level.
+  - **🎉 Meme Vibe Check** — `GET /api/analytics/vibe-check` returns fun/contextual one-liner based on current spending state + top category. `VibeCard.jsx` widget on dashboard (clickable to refresh).
+  - Nav updated: Goals + Subscriptions items added in `Layout.jsx`
+  - Routes added in `App.js`: `/goals`, `/subscriptions`
+  - Backend Mongo indexes: `goals.owner_id`, `subscriptions.(owner_id, next_billing_date)`
 
 ## Data Model
 - `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id

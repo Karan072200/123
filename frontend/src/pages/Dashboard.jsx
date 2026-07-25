@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import AddAccountDialog from "@/components/AddAccountDialog";
 import SmsParseDialog from "@/components/SmsParseDialog";
+import HealthScoreCard from "@/components/HealthScoreCard";
+import StreakCard from "@/components/StreakCard";
+import VibeCard from "@/components/VibeCard";
 import {
   TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
@@ -95,6 +98,15 @@ export default function Dashboard() {
           value={summary
             ? formatMoney((summary.udhaar_lene || 0) - (summary.udhaar_dene || 0), cur)
             : "—"} />
+      </div>
+
+      {/* Vibe / Meme */}
+      <VibeCard />
+
+      {/* Health + Streak */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2"><HealthScoreCard /></div>
+        <StreakCard />
       </div>
 
       {/* Accounts + Recent */}
