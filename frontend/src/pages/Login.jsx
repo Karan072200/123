@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Wallet, Lock, KeyRound } from "lucide-react";
 import { http, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Login() {
   const { login, refresh, error } = useAuth();
