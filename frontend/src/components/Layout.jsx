@@ -13,6 +13,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import ChatWidget from "@/components/ChatWidget";
 import { CURRENCIES, http } from "@/lib/api";
 import { useEffect, useState } from "react";
 
@@ -198,6 +199,7 @@ export default function Layout({ children }) {
 
         <div className="p-6 md:p-8 max-w-7xl mx-auto">{children}</div>
       </main>
+      <ChatWidget />
     </div>
   );
 }
