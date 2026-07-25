@@ -1338,6 +1338,90 @@ async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)
     )
 
 
+# ----- AI Chat (Munim Ji) — conversational -----
+class ChatMessageIn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatIn(BaseModel):
+    messages: List[ChatMessageIn]
+
+
+@api.post("/ai/chat")
+async def ai_chat(body: ChatIn, user=Depends(get_current_user)):
+    """Conversational chat with Munim Ji. Uses last 6 messages + user's financial context."""
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="No messages")
+
+    # Get user's financial snapshot for context
+    summary = await analytics_summary(user)
+    currency = user.get("currency", "INR")
+
+    context_lines = [
+        f"User's name: {user.get('name', 'friend')}",
+        f"Currency: {currency}",
+        f"This month income: {currency}{summary.get('total_income', 0):.0f}",
+        f"This month expense: {currency}{summary.get('total_expense', 0):.0f}",
+        f"Net balance: {currency}{summary.get('net_balance', 0):.0f}",
+        f"Udhaar lena (to receive): {currency}{summary.get('udhaar_lene', 0):.0f}",
+        f"Udhaar dena (to pay): {currency}{summary.get('udhaar_dene', 0):.0f}",
+    ]
+    top_cats = summary.get("expense_by_category", [])[:3]
+    if top_cats:
+        context_lines.append("Top expense categories: " + ", ".join(
+            f"{c['category']} ({currency}{c['total']:.0f})" for c in top_cats
+        ))
+    context = "\n".join(context_lines)
+
+    system_msg = (
+        "You are 'Munim Ji' — a friendly, witty Indian personal finance advisor. "
+        "You speak in warm Hinglish (Hindi mixed with English). Keep replies SHORT (2-4 sentences max) "
+        "and conversational. Use emojis occasionally. Be practical, non-judgmental, encouraging. "
+        "If user asks about their finances, use the CONTEXT below. If unclear, ask a clarifying question. "
+        "If asked to add a transaction, tell them to use the 'Transaction' button (you cannot add for them). "
+        "Never make up numbers not in context. Never give investment advice for specific stocks/funds. "
+        f"\n\nCURRENT USER CONTEXT:\n{context}"
+    )
+
+    # Take last 6 messages (for token efficiency)
+    recent = body.messages[-6:]
+    user_msg_parts = []
+    for m in recent[:-1]:
+        prefix = "User: " if m.role == "user" else "Munim Ji: "
+        user_msg_parts.append(f"{prefix}{m.content}")
+    user_msg_parts.append(f"User: {recent[-1].content}")
+    user_msg_parts.append("Munim Ji:")
+    user_msg = "\n".join(user_msg_parts)
+
+    try:
+        reply = await llm_json_call(
+            system_msg=system_msg,
+            user_msg=user_msg,
+            session_id=f"chat-{user['id']}",
+        )
+        if not reply:
+            reply = "Bhai abhi thoda dimag out of order hai 😅 — thodi der baad try karo!"
+        # Clean any markdown/quotes
+        reply = reply.strip().strip('"').strip()
+        if reply.startswith("Munim Ji:"):
+            reply = reply[len("Munim Ji:"):].strip()
+        return {"reply": reply}
+    except Exception as e:
+        logger.exception("AI chat failed: %s", e)
+        # Fallback simple response
+        last_user = recent[-1].content.lower()
+        if "kharcha" in last_user or "expense" in last_user:
+            fallback = f"Iss mahine total kharcha {currency}{summary.get('total_expense', 0):.0f} hua hai. Kya specific poochna hai?"
+        elif "income" in last_user or "aaya" in last_user or "salary" in last_user:
+            fallback = f"Iss mahine {currency}{summary.get('total_income', 0):.0f} aayi hai. Savings kaisi chal rahi hai?"
+        elif "udhaar" in last_user:
+            fallback = f"Aapko {currency}{summary.get('udhaar_lene', 0):.0f} lene hain aur {currency}{summary.get('udhaar_dene', 0):.0f} dene hain."
+        else:
+            fallback = "Namaste! Main Munim Ji. Aap finance ke baare me kuch bhi puch sakte ho — kharcha, savings, udhaar, budget."
+        return {"reply": fallback, "fallback": True}
+
+
 # ----- Financial Goals (Sapno ka Wallet) -----
 class GoalIn(BaseModel):
     name: str

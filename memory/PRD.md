@@ -48,7 +48,7 @@
   - Files added: `frontend/.npmrc`, `frontend/.nvmrc`, `frontend/vercel.json` (yarn install/build)
 
 ### v7 (25 Jul 2026) — 6 New Features Added (Feature Batch 1)
-  - **🎤 Voice Input** — Web Speech API + `/api/voice/parse-transaction` regex+LLM parser. Hinglish speech → transaction dict. `VoiceInput.jsx` integrated inside AddTransactionDialog.
+  - **🎤 Voice Input** — Web Speech API + `/api/voice/parse-transaction` regex+LLM parser. Hinglish speech → transaction dict. `VoiceInput.jsx` integrated inside AddTransactionDialog. Compact mobile-responsive layout.
   - **🎯 Financial Goals (Sapno ka Wallet)** — Full CRUD `/api/goals/*` + `Goals.jsx` page. Emoji picker, color picker, progress bars, contribute dialog with `/goals/{id}/contribute`.
   - **💳 Subscription Tracker** — Full CRUD `/api/subscriptions/*` with monthly/quarterly/yearly cycles, auto monthly_total calc. `Subscriptions.jsx` with quick-add presets (Netflix, Spotify, Prime, etc.), pause/resume toggle.
   - **📊 Financial Health Score** — `GET /api/analytics/health-score` returns 0-100 score + grade (A+/A/B/C/D) + Hinglish motto. Breakdown across savings/budget/udhaar/diversification/activity. `HealthScoreCard.jsx` widget with circular progress + expandable details.
@@ -57,6 +57,12 @@
   - Nav updated: Goals + Subscriptions items added in `Layout.jsx`
   - Routes added in `App.js`: `/goals`, `/subscriptions`
   - Backend Mongo indexes: `goals.owner_id`, `subscriptions.(owner_id, next_billing_date)`
+
+### v8 (25 Jul 2026) — Munim Ji Chat Widget
+  - **💬 Conversational AI Chat** — `POST /api/ai/chat` accepts messages history + returns Hinglish contextual reply. Uses user's live financial context (income, expense, udhaar, top categories) for personalized answers.
+  - **Floating chat bubble** (`ChatWidget.jsx`) — bottom-right of every authenticated page. Multi-turn conversation, localStorage persistence (last 20 messages), quick prompt suggestions, typing indicator, clear history option.
+  - Integrated globally via `Layout.jsx` — appears on Dashboard, Transactions, Udhaar, Goals, Subs, Reports etc.
+  - Fallback to canned Hinglish responses if LLM fails.
 
 ## Data Model
 - `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id
