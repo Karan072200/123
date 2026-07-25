@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CATEGORIES, http, ensureNotificationPermission, showBudgetNotification } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import VoiceInput from "@/components/VoiceInput";
 
 export default function AddTransactionDialog({ open, onOpenChange, accounts, onDone, existing }) {
   const isEdit = Boolean(existing);
@@ -93,6 +94,19 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
               className="data-[state=active]:bg-[#4A7C59] data-[state=active]:text-white">Aaya</TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {!isEdit && (
+          <VoiceInput onParsed={(d) => {
+            if (d.amount) setAmount(String(d.amount));
+            if (d.type) setType(d.type);
+            if (d.category) {
+              const cats = CATEGORIES[d.type || "expense"] || [];
+              if (cats.includes(d.category)) setCategory(d.category);
+              else setCategory(cats[0] || "Other");
+            }
+            if (d.note) setNote(d.note);
+          }} />
+        )}
 
         <div className="space-y-3 mt-2">
           <div>

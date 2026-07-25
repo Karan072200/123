@@ -17,6 +17,8 @@ import Ledgers from "@/pages/Ledgers";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
 import Settings from "@/pages/Settings";
+import Goals from "@/pages/Goals";
+import Subscriptions from "@/pages/Subscriptions";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -61,6 +63,8 @@ function App() {
             <Route path="/recurring" element={<Protected><Recurring /></Protected>} />
             <Route path="/budgets" element={<Protected><Budgets /></Protected>} />
             <Route path="/ledgers" element={<Protected><Ledgers /></Protected>} />
+            <Route path="/goals" element={<Protected><Goals /></Protected>} />
+            <Route path="/subscriptions" element={<Protected><Subscriptions /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />

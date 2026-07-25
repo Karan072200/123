@@ -1391,6 +1391,512 @@ async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)
     )
 
 
+# ----- Financial Goals (Sapno ka Wallet) -----
+class GoalIn(BaseModel):
+    name: str
+    target_amount: float
+    saved_amount: float = 0.0
+    target_date: Optional[str] = None
+    emoji: str = "🎯"
+    color: str = "#4A7C59"
+
+
+class GoalUpdate(BaseModel):
+    name: Optional[str] = None
+    target_amount: Optional[float] = None
+    saved_amount: Optional[float] = None
+    target_date: Optional[str] = None
+    emoji: Optional[str] = None
+    color: Optional[str] = None
+
+
+@api.get("/goals")
+async def list_goals(user=Depends(get_current_user)):
+    rows = await db.goals.find(scope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
+    return rows
+
+
+@api.post("/goals")
+async def create_goal(body: GoalIn, user=Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["current_ledger_id"],
+        "user_id": user["id"],
+        "name": body.name,
+        "target_amount": float(body.target_amount),
+        "saved_amount": float(body.saved_amount or 0.0),
+        "target_date": body.target_date,
+        "emoji": body.emoji or "🎯",
+        "color": body.color or "#4A7C59",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.goals.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/goals/{goal_id}")
+async def update_goal(goal_id: str, body: GoalUpdate, user=Depends(get_current_user)):
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    res = await db.goals.update_one({"id": goal_id, **scope(user)}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    doc = await db.goals.find_one({"id": goal_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/goals/{goal_id}")
+async def delete_goal(goal_id: str, user=Depends(get_current_user)):
+    res = await db.goals.delete_one({"id": goal_id, **scope(user)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    return {"ok": True}
+
+
+@api.post("/goals/{goal_id}/contribute")
+async def contribute_to_goal(goal_id: str, amount: float, user=Depends(get_current_user)):
+    goal = await db.goals.find_one({"id": goal_id, **scope(user)})
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    new_saved = float(goal.get("saved_amount", 0)) + float(amount)
+    await db.goals.update_one({"id": goal_id}, {"$set": {"saved_amount": new_saved}})
+    return {"ok": True, "saved_amount": new_saved, "target_amount": goal["target_amount"]}
+
+
+# ----- Subscription Tracker -----
+class SubscriptionIn(BaseModel):
+    name: str
+    amount: float
+    category: str = "Entertainment"
+    billing_cycle: Literal["monthly", "quarterly", "yearly", "weekly"] = "monthly"
+    next_billing_date: Optional[str] = None
+    account_id: Optional[str] = None
+    emoji: str = "💳"
+    color: str = "#D96C52"
+    active: bool = True
+    website: Optional[str] = ""
+
+
+class SubscriptionUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    billing_cycle: Optional[Literal["monthly", "quarterly", "yearly", "weekly"]] = None
+    next_billing_date: Optional[str] = None
+    account_id: Optional[str] = None
+    emoji: Optional[str] = None
+    color: Optional[str] = None
+    active: Optional[bool] = None
+    website: Optional[str] = None
+
+
+@api.get("/subscriptions")
+async def list_subscriptions(user=Depends(get_current_user)):
+    rows = await db.subscriptions.find(scope(user), {"_id": 0}).sort("next_billing_date", 1).to_list(500)
+    # compute monthly total
+    monthly_total = 0.0
+    for r in rows:
+        if not r.get("active"):
+            continue
+        amt = float(r.get("amount", 0))
+        cycle = r.get("billing_cycle", "monthly")
+        if cycle == "monthly":
+            monthly_total += amt
+        elif cycle == "yearly":
+            monthly_total += amt / 12
+        elif cycle == "quarterly":
+            monthly_total += amt / 3
+        elif cycle == "weekly":
+            monthly_total += amt * 4.33
+    return {"subscriptions": rows, "monthly_total": round(monthly_total, 2)}
+
+
+@api.post("/subscriptions")
+async def create_subscription(body: SubscriptionIn, user=Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["current_ledger_id"],
+        "user_id": user["id"],
+        **body.model_dump(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.subscriptions.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/subscriptions/{sub_id}")
+async def update_subscription(sub_id: str, body: SubscriptionUpdate, user=Depends(get_current_user)):
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    res = await db.subscriptions.update_one({"id": sub_id, **scope(user)}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    doc = await db.subscriptions.find_one({"id": sub_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/subscriptions/{sub_id}")
+async def delete_subscription(sub_id: str, user=Depends(get_current_user)):
+    res = await db.subscriptions.delete_one({"id": sub_id, **scope(user)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return {"ok": True}
+
+
+# ----- Financial Health Score -----
+@api.get("/analytics/health-score")
+async def health_score(user=Depends(get_current_user)):
+    """Calculate 0-100 financial health score based on:
+    - Savings rate (40%)
+    - Budget adherence (25%)
+    - Udhaar balance (15%)
+    - Diversification (10%)
+    - Activity/tracking (10%)
+    """
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # Get this month's txns
+    txns = await db.transactions.find(
+        {**scope(user), "date": {"$gte": month_start}}, {"_id": 0}
+    ).to_list(5000)
+    total_income = sum(t["amount"] for t in txns if t["type"] == "income")
+    total_expense = sum(t["amount"] for t in txns if t["type"] == "expense")
+    savings = total_income - total_expense
+    savings_rate = (savings / total_income * 100) if total_income > 0 else 0
+
+    # Score components
+    scores = {}
+
+    # 1. Savings rate (40 pts) — ideally save >20%
+    if savings_rate >= 30:
+        scores["savings"] = 40
+    elif savings_rate >= 20:
+        scores["savings"] = 32
+    elif savings_rate >= 10:
+        scores["savings"] = 20
+    elif savings_rate >= 0:
+        scores["savings"] = 10
+    else:
+        scores["savings"] = 0
+
+    # 2. Budget adherence (25 pts)
+    budgets = await db.budgets.find(scope(user), {"_id": 0}).to_list(200)
+    if budgets:
+        breach_count = 0
+        for b in budgets:
+            spent = sum(t["amount"] for t in txns if t["type"] == "expense" and t["category"] == b["category"])
+            if spent > b["amount"]:
+                breach_count += 1
+        adherence = (len(budgets) - breach_count) / len(budgets)
+        scores["budget"] = int(adherence * 25)
+    else:
+        scores["budget"] = 12  # partial credit for no budgets yet
+
+    # 3. Udhaar balance (15 pts) — less pending is better
+    udhaars = await db.udhaar.find({**scope(user), "status": "pending"}, {"_id": 0}).to_list(200)
+    dene_amt = sum(u["amount"] for u in udhaars if u["type"] == "dene")
+    lene_amt = sum(u["amount"] for u in udhaars if u["type"] == "lene")
+    net_udhaar = dene_amt - lene_amt  # positive = more to give, negative = more to receive
+    if total_income > 0:
+        udhaar_ratio = abs(net_udhaar) / total_income
+        if udhaar_ratio < 0.1:
+            scores["udhaar"] = 15
+        elif udhaar_ratio < 0.3:
+            scores["udhaar"] = 10
+        elif udhaar_ratio < 0.5:
+            scores["udhaar"] = 5
+        else:
+            scores["udhaar"] = 0
+    else:
+        scores["udhaar"] = 10
+
+    # 4. Diversification (10 pts) — multiple accounts
+    accounts = await db.accounts.find(scope(user), {"_id": 0}).to_list(50)
+    if len(accounts) >= 3:
+        scores["diversification"] = 10
+    elif len(accounts) == 2:
+        scores["diversification"] = 7
+    elif len(accounts) == 1:
+        scores["diversification"] = 4
+    else:
+        scores["diversification"] = 0
+
+    # 5. Activity/tracking (10 pts) — txns this month
+    if len(txns) >= 20:
+        scores["activity"] = 10
+    elif len(txns) >= 10:
+        scores["activity"] = 7
+    elif len(txns) >= 5:
+        scores["activity"] = 4
+    else:
+        scores["activity"] = 1
+
+    total_score = sum(scores.values())
+
+    # Grade & Motto
+    if total_score >= 85:
+        grade = "A+"
+        motto = "Paisa ka Baadshah 👑"
+        message = "Bhai tum toh Ambani ban rahe ho — ekdum solid financial habits!"
+    elif total_score >= 70:
+        grade = "A"
+        motto = "Money Master 💪"
+        message = "Wah bhai wah! Financial planning ekdum sahi track pe hai."
+    elif total_score >= 55:
+        grade = "B"
+        motto = "Sudhaar Chahiye 📈"
+        message = "Achha kar rahe ho, but thoda aur bachao — future ka sochke."
+    elif total_score >= 40:
+        grade = "C"
+        motto = "Kharcha King 💸"
+        message = "Bhai kharcha kam karo — budget follow karne se score improve hoga."
+    else:
+        grade = "D"
+        motto = "Munim Ji ki Zaroorat 😅"
+        message = "Bhai ekdum se hisab-kitab shuru karo, budget banao — abhi improve karne ka time hai!"
+
+    return {
+        "score": total_score,
+        "grade": grade,
+        "motto": motto,
+        "message": message,
+        "breakdown": scores,
+        "stats": {
+            "total_income": round(total_income, 2),
+            "total_expense": round(total_expense, 2),
+            "savings": round(savings, 2),
+            "savings_rate": round(savings_rate, 1),
+            "transaction_count": len(txns),
+            "accounts_count": len(accounts),
+            "pending_udhaar_dene": round(dene_amt, 2),
+            "pending_udhaar_lene": round(lene_amt, 2),
+        },
+    }
+
+
+# ----- Streaks -----
+@api.get("/analytics/streak")
+async def get_streak(user=Depends(get_current_user)):
+    """Calculate current tracking streak (consecutive days with at least one transaction)"""
+    txns = await db.transactions.find(
+        scope(user), {"_id": 0, "date": 1}
+    ).sort("date", -1).to_list(500)
+
+    if not txns:
+        return {"current_streak": 0, "longest_streak": 0, "today_tracked": False, "message": "Aaj kuch add karo — streak shuru karo!"}
+
+    # Get unique dates (YYYY-MM-DD)
+    dates = set()
+    for t in txns:
+        d = t.get("date", "")
+        if d:
+            dates.add(d[:10])
+    dates_sorted = sorted(dates, reverse=True)
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    yesterday_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    today_tracked = today_str in dates
+    # Streak counts from today (if tracked) or yesterday (still active)
+    if today_str in dates:
+        current_date = datetime.now(timezone.utc)
+    elif yesterday_str in dates:
+        current_date = datetime.now(timezone.utc) - timedelta(days=1)
+    else:
+        return {"current_streak": 0, "longest_streak": 0, "today_tracked": False,
+                "message": "Streak toot gayi! Aaj se dobara shuru karo."}
+
+    current_streak = 0
+    while current_date.strftime("%Y-%m-%d") in dates:
+        current_streak += 1
+        current_date -= timedelta(days=1)
+
+    # Longest streak
+    longest_streak = 0
+    temp_streak = 0
+    prev_date = None
+    for d_str in sorted(dates):
+        d = datetime.strptime(d_str, "%Y-%m-%d")
+        if prev_date is None or (d - prev_date).days == 1:
+            temp_streak += 1
+        else:
+            temp_streak = 1
+        longest_streak = max(longest_streak, temp_streak)
+        prev_date = d
+
+    # Fun message
+    if current_streak >= 30:
+        msg = f"🔥 {current_streak} din streak! Tum toh Money Master ho gaye!"
+    elif current_streak >= 7:
+        msg = f"🔥 {current_streak} din straight — kamaal ka discipline!"
+    elif current_streak >= 3:
+        msg = f"🎯 {current_streak} din streak — keep going bhai!"
+    elif current_streak >= 1:
+        msg = f"✨ Streak shuru! Kal bhi track karna mat bhoolna."
+    else:
+        msg = "Aaj kuch add karo — streak shuru karo!"
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "today_tracked": today_tracked,
+        "message": msg,
+    }
+
+
+# ----- Meme Alerts (Fun Notifications) -----
+@api.get("/analytics/vibe-check")
+async def vibe_check(user=Depends(get_current_user)):
+    """Return a funny/motivational one-liner based on current state"""
+    import random
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    txns = await db.transactions.find(
+        {**scope(user), "date": {"$gte": month_start}}, {"_id": 0}
+    ).to_list(2000)
+    total_income = sum(t["amount"] for t in txns if t["type"] == "income")
+    total_expense = sum(t["amount"] for t in txns if t["type"] == "expense")
+
+    # Category-specific memes
+    cat_totals = {}
+    for t in txns:
+        if t["type"] == "expense":
+            cat_totals[t["category"]] = cat_totals.get(t["category"], 0) + t["amount"]
+    top_cat = max(cat_totals.items(), key=lambda x: x[1]) if cat_totals else None
+
+    memes = []
+
+    # Balance-based memes
+    if total_income == 0 and total_expense == 0:
+        memes = [
+            {"emoji": "😴", "text": "Iss mahine kuch bhi track nahi kiya. Munim Ji so gaya hai."},
+            {"emoji": "🤔", "text": "Bhai kharcha kaha kar rahe ho? App ko batao!"},
+        ]
+    elif total_expense > total_income:
+        memes = [
+            {"emoji": "😱", "text": "Kharcha income se zyada! Warren Buffet ne kuch aur socha hoga."},
+            {"emoji": "💸", "text": "Paisa udd raha hai — udhaar lene ki nobat na aa jaye."},
+            {"emoji": "🚨", "text": "RED ALERT: Kharcha > Income. Kuch to gadbad hai."},
+        ]
+    elif total_income > 0 and (total_income - total_expense) / total_income > 0.3:
+        memes = [
+            {"emoji": "👑", "text": "30%+ bachat! Ambani beta ban rahe ho."},
+            {"emoji": "🎉", "text": "Great savings this month — Munim Ji proud hai!"},
+            {"emoji": "💰", "text": "Solid bachat — SIP shuru karo, karod pati ban jao."},
+        ]
+    else:
+        memes = [
+            {"emoji": "😊", "text": "Chal raha hai... but aur bachao yaar."},
+            {"emoji": "📊", "text": "Steady kharcha — but savings rate improve karna hai."},
+        ]
+
+    # Category-specific meme
+    if top_cat:
+        cat, amt = top_cat
+        if cat.lower() == "food" and amt > 5000:
+            memes.append({"emoji": "🍕", "text": f"Food pe ₹{int(amt)}! Kitchen kis din se band hai?"})
+        if cat.lower() == "shopping" and amt > 3000:
+            memes.append({"emoji": "🛍️", "text": f"Shopping pe ₹{int(amt)}! Amazon ke shareholder ban rahe ho."})
+        if cat.lower() == "entertainment" and amt > 2000:
+            memes.append({"emoji": "🎬", "text": f"Entertainment pe ₹{int(amt)}! Netflix + Prime + Hotstar sab liya hai kya?"})
+        if cat.lower() == "transport" and amt > 4000:
+            memes.append({"emoji": "🚗", "text": f"Transport ₹{int(amt)} — Uber ka VIP customer banoge."})
+
+    chosen = random.choice(memes) if memes else {"emoji": "💡", "text": "Track your money, master your life!"}
+    return chosen
+
+
+# ----- Voice Parse (accepts spoken transaction, returns structured) -----
+class VoiceParseIn(BaseModel):
+    text: str
+
+
+@api.post("/voice/parse-transaction")
+async def voice_parse_transaction(body: VoiceParseIn, user=Depends(get_current_user)):
+    """
+    Parse spoken/typed text like "500 rupaye zomato pe" into a transaction dict.
+    Uses regex first, LLM as fallback.
+    """
+    import re
+    text = body.text.strip().lower()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    # Regex: try to extract amount
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:rupaye|rupees|rs\.?|₹|inr)?", text)
+    amount = float(m.group(1)) if m else None
+
+    # Detect income keywords
+    income_kw = ["mila", "aaya", "salary", "earned", "received", "credit", "income", "bonus"]
+    is_income = any(k in text for k in income_kw)
+
+    # Category detection (simple keyword mapping)
+    cat_map = {
+        "Food": ["zomato", "swiggy", "dominos", "khana", "food", "restaurant", "cafe", "bhojan", "lunch", "dinner", "breakfast"],
+        "Groceries": ["dmart", "bigbasket", "grocery", "sabzi", "vegetable", "kirana"],
+        "Transport": ["uber", "ola", "petrol", "diesel", "cab", "auto", "rickshaw", "metro", "bus", "train"],
+        "Shopping": ["amazon", "flipkart", "myntra", "shopping", "kapde", "clothes", "meesho"],
+        "Bills": ["bill", "electricity", "recharge", "airtel", "jio", "vi", "gas", "water", "internet"],
+        "Entertainment": ["netflix", "prime", "hotstar", "movie", "cinema", "spotify"],
+        "Health": ["medicine", "doctor", "hospital", "pharmacy", "medical"],
+        "Salary": ["salary", "vetan", "tankha"],
+    }
+    detected_cat = None
+    for cat, keywords in cat_map.items():
+        if any(k in text for k in keywords):
+            detected_cat = cat
+            break
+
+    if not detected_cat:
+        detected_cat = "Other" if not is_income else "Other Income"
+
+    if amount is None:
+        # Try LLM fallback
+        llm_prompt = (
+            "Extract transaction details from this Hinglish text. Return ONLY valid JSON with keys: "
+            "amount (number), type ('income' or 'expense'), category, merchant, note. "
+            f"Text: {body.text}"
+        )
+        try:
+            out = await llm_json_call(
+                system_msg="You are a finance transaction parser. Return only JSON.",
+                user_msg=llm_prompt,
+                session_id=f"voice-{user['id']}",
+            )
+            if out:
+                import json as _json
+                # extract JSON block
+                jm = re.search(r"\{[\s\S]*\}", out)
+                if jm:
+                    parsed = _json.loads(jm.group(0))
+                    return {
+                        "amount": float(parsed.get("amount") or 0),
+                        "type": parsed.get("type", "expense"),
+                        "category": parsed.get("category", "Other"),
+                        "note": parsed.get("note") or parsed.get("merchant", ""),
+                        "confidence": "llm",
+                    }
+        except Exception as e:
+            logging.warning("voice LLM parse failed: %s", e)
+        raise HTTPException(status_code=400, detail="Amount detect nahi hua. Fir se boliye ya type kariye.")
+
+    # Extract note (words minus category keywords)
+    note = body.text
+    return {
+        "amount": amount,
+        "type": "income" if is_income else "expense",
+        "category": detected_cat,
+        "note": note,
+        "confidence": "regex",
+    }
+
+
 # ----- Health -----
 @api.get("/")
 async def root():
@@ -1418,6 +1924,8 @@ async def startup():
     await db.budgets.create_index([("owner_id", 1), ("category", 1)], unique=True)
     await db.ledgers.create_index("invite_code")
     await db.ledgers.create_index("members")
+    await db.goals.create_index([("owner_id", 1)])
+    await db.subscriptions.create_index([("owner_id", 1), ("next_billing_date", 1)])
     logger.info("Apka Munim API started")
 
 
