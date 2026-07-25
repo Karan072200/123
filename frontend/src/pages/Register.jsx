@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CURRENCIES } from "@/lib/api";
 import { Wallet } from "lucide-react";
 import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/PasswordStrengthMeter";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Register() {
   const { register, error } = useAuth();
