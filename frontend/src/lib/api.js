@@ -34,12 +34,14 @@ export const CATEGORIES = {
 };
 
 export const ACCOUNT_TYPES = [
-  { value: "savings", label: "Savings" },
-  { value: "current", label: "Current" },
-  { value: "cash", label: "Cash" },
-  { value: "wallet", label: "Wallet" },
-  { value: "credit_card", label: "Credit Card" },
-  { value: "other", label: "Other" },
+  { value: "savings", label: "💰 Savings" },
+  { value: "current", label: "🏢 Current" },
+  { value: "cash", label: "💵 Cash" },
+  { value: "wallet", label: "📱 Wallet (UPI/PayTM)" },
+  { value: "credit_card", label: "💳 Credit Card" },
+  { value: "emergency", label: "🛡️ Emergency Fund" },
+  { value: "investment", label: "📈 Investment (SIP/FD/Stocks)" },
+  { value: "other", label: "📦 Other" },
 ];
 
 export function formatApiError(detail) {

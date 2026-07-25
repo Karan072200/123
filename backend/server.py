@@ -232,7 +232,7 @@ class LoginIn(BaseModel):
 
 class AccountIn(BaseModel):
     name: str
-    type: Literal["savings", "current", "cash", "wallet", "credit_card", "other"] = "savings"
+    type: Literal["savings", "current", "cash", "wallet", "credit_card", "emergency", "investment", "other"] = "savings"
     opening_balance: float = 0.0
     currency: str = "INR"
     color: str = "#2A4F4F"
@@ -1430,6 +1430,7 @@ class GoalIn(BaseModel):
     target_date: Optional[str] = None
     emoji: str = "🎯"
     color: str = "#4A7C59"
+    account_id: Optional[str] = None
 
 
 class GoalUpdate(BaseModel):
@@ -1439,11 +1440,53 @@ class GoalUpdate(BaseModel):
     target_date: Optional[str] = None
     emoji: Optional[str] = None
     color: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 @api.get("/goals")
 async def list_goals(user=Depends(get_current_user)):
     rows = await db.goals.find(scope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Enrich each goal with savings breakdown
+    now = datetime.now(timezone.utc).date()
+    for g in rows:
+        target_amt = float(g.get("target_amount", 0))
+        saved_amt = float(g.get("saved_amount", 0))
+        remaining = max(0, target_amt - saved_amt)
+        pct = round((saved_amt / target_amt * 100) if target_amt > 0 else 0, 1)
+
+        breakdown = {
+            "remaining": round(remaining, 2),
+            "percent": pct,
+            "days_left": None,
+            "per_day": None,
+            "per_week": None,
+            "per_month": None,
+            "status": "on_track",
+        }
+
+        target_date_str = g.get("target_date")
+        if target_date_str and remaining > 0:
+            try:
+                tgt = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+                days = (tgt - now).days
+                if days > 0:
+                    breakdown["days_left"] = days
+                    breakdown["per_day"] = round(remaining / days, 2)
+                    breakdown["per_week"] = round(remaining / (days / 7), 2)
+                    breakdown["per_month"] = round(remaining / (days / 30.44), 2)
+                    if days < 30:
+                        breakdown["status"] = "urgent"
+                    elif days < 90:
+                        breakdown["status"] = "soon"
+                else:
+                    breakdown["status"] = "overdue"
+                    breakdown["days_left"] = 0
+            except Exception:
+                pass
+        elif remaining == 0:
+            breakdown["status"] = "achieved"
+
+        g["breakdown"] = breakdown
     return rows
 
 
@@ -1459,6 +1502,7 @@ async def create_goal(body: GoalIn, user=Depends(get_current_user)):
         "target_date": body.target_date,
         "emoji": body.emoji or "🎯",
         "color": body.color or "#4A7C59",
+        "account_id": body.account_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.goals.insert_one(doc)

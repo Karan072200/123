@@ -64,6 +64,14 @@
   - Integrated globally via `Layout.jsx` — appears on Dashboard, Transactions, Udhaar, Goals, Subs, Reports etc.
   - Fallback to canned Hinglish responses if LLM fails.
 
+### v9 (25 Jul 2026) — Goals Savings Plan + New Account Types
+  - **Goals enhancement**: `GET /api/goals` now enriches each goal with `breakdown`: `{remaining, percent, days_left, per_day, per_week, per_month, status}`. Status auto-computed: `on_track` / `soon` / `urgent` / `overdue` / `achieved`.
+  - **Linked accounts on goals**: `account_id` field added to Goal model + form. Users can link goal to any Savings/Current/Investment/Emergency account.
+  - **New account types**: `emergency` (Emergency Fund 🛡️) and `investment` (SIP/FD/Stocks 📈) added to backend Literal + frontend `ACCOUNT_TYPES` with emoji labels.
+  - Goals page shows a **"Bachao kitna"** grid inside each card — Daily / Weekly / Monthly savings requirement — color-coded per goal.
+  - Status badge on each goal (color-coded pills).
+  - Contribute dialog shows daily suggestion tip.
+
 ## Data Model
 - `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id
 - `ledgers` — id, name, type (personal/shared), owner_user_id, members[], invite_code

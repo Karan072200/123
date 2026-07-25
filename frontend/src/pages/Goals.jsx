@@ -5,33 +5,49 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Target, TrendingUp, Trash2, PiggyBank } from "lucide-react";
+import { Plus, Target, TrendingUp, Trash2, PiggyBank, Calendar, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
-const EMOJI_OPTIONS = ["🎯", "🏠", "🚗", "📱", "💻", "✈️", "💍", "🎓", "👶", "💰", "🏖️", "🎁"];
+const EMOJI_OPTIONS = ["🎯", "🏠", "🚗", "📱", "💻", "✈️", "💍", "🎓", "👶", "💰", "🏖️", "🎁", "🛡️", "📈"];
 const COLOR_OPTIONS = ["#4A7C59", "#2A4F4F", "#E8B365", "#D96C52", "#8B6220", "#3B6446"];
+
+const STATUS_STYLE = {
+  on_track: { label: "On Track", cls: "bg-[#4A7C59]/15 text-[#3B6446]" },
+  soon: { label: "Kam Time", cls: "bg-[#E8B365]/20 text-[#8B6220]" },
+  urgent: { label: "Urgent!", cls: "bg-[#D96C52]/15 text-[#B15039]" },
+  overdue: { label: "Overdue", cls: "bg-red-100 text-red-700" },
+  achieved: { label: "🎉 Done!", cls: "bg-[#4A7C59] text-white" },
+};
 
 export default function Goals() {
   const { user } = useAuth();
   const currency = user?.currency || "INR";
   const [goals, setGoals] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openNew, setOpenNew] = useState(false);
-  const [openContrib, setOpenContrib] = useState(null); // goal object
+  const [openContrib, setOpenContrib] = useState(null);
   const [contribAmt, setContribAmt] = useState("");
 
   const [form, setForm] = useState({
     name: "", target_amount: "", saved_amount: "0", target_date: "",
-    emoji: "🎯", color: "#4A7C59",
+    emoji: "🎯", color: "#4A7C59", account_id: "none",
   });
 
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await http.get("/goals");
-      setGoals(data);
+      const [gRes, aRes] = await Promise.all([
+        http.get("/goals"),
+        http.get("/accounts"),
+      ]);
+      setGoals(gRes.data);
+      setAccounts(aRes.data);
     } catch (e) {
       toast.error(formatApiError(e?.response?.data?.detail));
     }
@@ -42,7 +58,7 @@ export default function Goals() {
 
   const createGoal = async () => {
     if (!form.name || !form.target_amount) {
-      toast.error("Naam aur target amount zaroori hain");
+      toast.error("Naam aur target amount zaroori");
       return;
     }
     try {
@@ -53,10 +69,12 @@ export default function Goals() {
         target_date: form.target_date || null,
         emoji: form.emoji,
         color: form.color,
+        account_id: form.account_id === "none" ? null : form.account_id,
       });
       toast.success("Goal add ho gaya! 🎯");
       setOpenNew(false);
-      setForm({ name: "", target_amount: "", saved_amount: "0", target_date: "", emoji: "🎯", color: "#4A7C59" });
+      setForm({ name: "", target_amount: "", saved_amount: "0", target_date: "",
+        emoji: "🎯", color: "#4A7C59", account_id: "none" });
       load();
     } catch (e) {
       toast.error(formatApiError(e?.response?.data?.detail));
@@ -67,7 +85,7 @@ export default function Goals() {
     if (!contribAmt || parseFloat(contribAmt) <= 0) return;
     try {
       await http.post(`/goals/${openContrib.id}/contribute?amount=${contribAmt}`);
-      toast.success(`₹${contribAmt} add ho gaya! 💰`);
+      toast.success(`${formatMoney(contribAmt, currency)} add ho gaya! 💰`);
       setOpenContrib(null);
       setContribAmt("");
       load();
@@ -82,10 +100,12 @@ export default function Goals() {
       await http.delete(`/goals/${id}`);
       toast.success("Goal delete ho gaya");
       load();
-    } catch (e) {
-      toast.error(formatApiError(e?.response?.data?.detail));
-    }
+    } catch (e) { toast.error(formatApiError(e?.response?.data?.detail)); }
   };
+
+  const savingAccounts = accounts.filter(a =>
+    ["savings", "current", "investment", "emergency"].includes(a.type)
+  );
 
   return (
     <div className="space-y-8" data-testid="goals-page">
@@ -98,7 +118,7 @@ export default function Goals() {
             Financial Goals
           </h1>
           <p className="text-sm text-[#78716C] mt-2 max-w-lg">
-            Apne sapne likh do — car, ghar, iPhone, ya vacation. Har mahine kuch bacha ke, sapne poore karo.
+            Apne sapne likh do — car, ghar, iPhone, ya vacation. App batayega roz kitna bachana hai.
           </p>
         </div>
         <Dialog open={openNew} onOpenChange={setOpenNew}>
@@ -107,20 +127,20 @@ export default function Goals() {
               <Plus className="w-4 h-4 mr-1" /> Naya Goal
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Naya Financial Goal</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label>Goal ka Naam</Label>
-                <Input data-testid="goal-name-input" placeholder="e.g., iPhone 16 Pro"
+                <Input data-testid="goal-name-input" placeholder="e.g., iPhone 16 Pro, Ghar, Vacation"
                   value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Target Amount</Label>
-                  <Input data-testid="goal-target-input" type="number" placeholder="120000"
+                  <Input data-testid="goal-target-input" type="number" placeholder="150000"
                     value={form.target_amount}
                     onChange={(e) => setForm({ ...form, target_amount: e.target.value })} />
                 </div>
@@ -131,9 +151,24 @@ export default function Goals() {
                 </div>
               </div>
               <div>
-                <Label>Target Date (Optional)</Label>
+                <Label>Target Date <span className="text-xs text-[#78716C]">(Optional — but recommended for daily calc)</span></Label>
                 <Input type="date" value={form.target_date}
                   onChange={(e) => setForm({ ...form, target_date: e.target.value })} />
+              </div>
+              <div>
+                <Label>Linked Account <span className="text-xs text-[#78716C]">(jisme paise jayenge)</span></Label>
+                <Select value={form.account_id}
+                  onValueChange={(v) => setForm({ ...form, account_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Koi account link karo (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-- Koi link nahi --</SelectItem>
+                    {savingAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name} · {a.type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Emoji</Label>
@@ -177,29 +212,34 @@ export default function Goals() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {goals.map((g) => {
-          const pct = Math.min(100, Math.round((g.saved_amount / g.target_amount) * 100));
-          const remaining = Math.max(0, g.target_amount - g.saved_amount);
-          const daysLeft = g.target_date
-            ? Math.max(0, Math.ceil((new Date(g.target_date) - new Date()) / (1000 * 60 * 60 * 24)))
-            : null;
+          const b = g.breakdown || {};
+          const pct = Math.min(100, b.percent || 0);
+          const linkedAccount = g.account_id ? accounts.find(a => a.id === g.account_id) : null;
+          const status = STATUS_STYLE[b.status] || STATUS_STYLE.on_track;
           return (
             <div key={g.id} data-testid={`goal-card-${g.id}`}
               className="bg-white rounded-2xl border border-[#E7E5DF] p-5 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl"
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
                     style={{ backgroundColor: `${g.color}20` }}>
                     {g.emoji}
                   </div>
                   <div>
-                    <div className="font-heading font-bold text-[#1C1917]">{g.name}</div>
-                    {daysLeft !== null && (
-                      <div className="text-xs text-[#78716C]">
-                        {daysLeft > 0 ? `${daysLeft} din baaki` : "⏰ Time up"}
-                      </div>
-                    )}
+                    <div className="font-heading font-bold text-[#1C1917] text-lg">{g.name}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${status.cls}`}>
+                        {status.label}
+                      </span>
+                      {b.days_left !== null && b.days_left !== undefined && (
+                        <span className="text-xs text-[#78716C] flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {b.days_left > 0 ? `${b.days_left} din baaki` : "Time up"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <button data-testid={`goal-delete-${g.id}`} onClick={() => deleteGoal(g.id)}
@@ -222,15 +262,52 @@ export default function Goals() {
                 <div className="flex items-center justify-between mt-1.5">
                   <span className="text-xs font-semibold text-[#57534E]">{pct}% done</span>
                   <span className="text-xs text-[#78716C]">
-                    {remaining > 0 ? `${formatMoney(remaining, currency)} baaki` : "🎉 Complete!"}
+                    {b.remaining > 0 ? `${formatMoney(b.remaining, currency)} baaki` : "🎉 Complete!"}
                   </span>
                 </div>
               </div>
 
+              {/* Savings Breakdown — HIGHLIGHT */}
+              {b.per_day && b.status !== "achieved" && b.status !== "overdue" && (
+                <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: `${g.color}0d`, border: `1px dashed ${g.color}40` }}>
+                  <div className="text-[10px] font-semibold text-[#57534E] tracking-wider uppercase mb-2 flex items-center gap-1">
+                    <PiggyBank className="w-3 h-3" /> Bachao kitna
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-[10px] text-[#78716C] uppercase">Daily</div>
+                      <div className="font-heading font-bold text-sm" style={{ color: g.color }}>
+                        {formatMoney(b.per_day, currency)}
+                      </div>
+                    </div>
+                    <div className="border-x border-[#E7E5DF]/50">
+                      <div className="text-[10px] text-[#78716C] uppercase">Weekly</div>
+                      <div className="font-heading font-bold text-sm" style={{ color: g.color }}>
+                        {formatMoney(b.per_week, currency)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#78716C] uppercase">Monthly</div>
+                      <div className="font-heading font-bold text-sm" style={{ color: g.color }}>
+                        {formatMoney(b.per_month, currency)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Linked Account */}
+              {linkedAccount && (
+                <div className="flex items-center gap-2 mb-3 text-xs text-[#57534E]">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Linked: <span className="font-semibold">{linkedAccount.name}</span> ({linkedAccount.type})</span>
+                </div>
+              )}
+
               <Button size="sm" onClick={() => setOpenContrib(g)}
                 data-testid={`goal-contribute-${g.id}`}
                 className="w-full bg-[#4A7C59] hover:bg-[#3B6446] text-white rounded-full">
-                <PiggyBank className="w-4 h-4 mr-1" /> Paisa Add karo
+                <TrendingUp className="w-4 h-4 mr-1" /> Paisa Add karo
               </Button>
             </div>
           );
@@ -248,6 +325,11 @@ export default function Goals() {
             <Input data-testid="goal-contribute-input" type="number" placeholder="1000"
               value={contribAmt} onChange={(e) => setContribAmt(e.target.value)}
               autoFocus />
+            {openContrib?.breakdown?.per_day && (
+              <div className="text-xs bg-[#F2F0EA] p-3 rounded-lg">
+                💡 <strong>Suggestion</strong>: {formatMoney(openContrib.breakdown.per_day, currency)} roz add karo — goal on time complete hoga!
+              </div>
+            )}
             <div className="text-xs text-[#78716C]">
               Current: {formatMoney(openContrib?.saved_amount || 0, currency)} /{" "}
               {formatMoney(openContrib?.target_amount || 0, currency)}
