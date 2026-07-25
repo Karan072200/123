@@ -80,38 +80,34 @@ export default function VoiceInput({ onParsed, disabled }) {
   }
 
   return (
-    <div className="border border-dashed border-[#4A7C59]/40 rounded-xl p-3 bg-[#4A7C59]/5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0
-            ${listening ? "bg-[#D96C52] animate-pulse" : "bg-[#4A7C59]"}`}>
-            {parsing ? (
-              <Loader2 className="w-4 h-4 text-white animate-spin" />
-            ) : listening ? (
-              <Mic className="w-4 h-4 text-white" />
-            ) : (
-              <Mic className="w-4 h-4 text-white" />
-            )}
+    <div className="border border-dashed border-[#4A7C59]/40 rounded-xl p-2.5 bg-[#4A7C59]/5">
+      <div className="flex items-center gap-2">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+          ${listening ? "bg-[#D96C52] animate-pulse" : "bg-[#4A7C59]"}`}>
+          {parsing ? (
+            <Loader2 className="w-4 h-4 text-white animate-spin" />
+          ) : (
+            <Mic className="w-4 h-4 text-white" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-[#3B6446] truncate">
+            {listening ? "🎤 Sun raha hoon..." : parsing ? "Parse ho raha hai..." : "Bolke add karo"}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-[#3B6446]">
-              {listening ? "🎤 Sun raha hoon..." : parsing ? "Parse ho raha hai..." : "Bolke transaction add karo"}
-            </div>
-            <div className="text-xs text-[#57534E] truncate italic">
-              {transcript || (!listening && "e.g., \"500 rupaye zomato pe\" ya \"salary 50000 aayi\"")}
-            </div>
+          <div className="text-[11px] text-[#57534E] truncate italic">
+            {transcript || (!listening && "e.g., \"500 rupaye zomato pe\"")}
           </div>
         </div>
         {listening ? (
           <Button size="sm" onClick={stop} data-testid="voice-stop-btn"
-            className="bg-[#D96C52] hover:bg-[#B15039] text-white rounded-full">
-            <MicOff className="w-4 h-4 mr-1" /> Stop
+            className="bg-[#D96C52] hover:bg-[#B15039] text-white rounded-full h-8 px-3 text-xs flex-shrink-0">
+            <MicOff className="w-3.5 h-3.5 mr-1" /> Stop
           </Button>
         ) : (
           <Button size="sm" onClick={start} disabled={disabled || parsing}
             data-testid="voice-start-btn"
-            className="bg-[#4A7C59] hover:bg-[#3B6446] text-white rounded-full">
-            <Mic className="w-4 h-4 mr-1" /> Bolo
+            className="bg-[#4A7C59] hover:bg-[#3B6446] text-white rounded-full h-8 px-3 text-xs flex-shrink-0">
+            <Mic className="w-3.5 h-3.5 mr-1" /> Bolo
           </Button>
         )}
       </div>
