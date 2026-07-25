@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES } from "@/lib/api";
 import { Wallet } from "lucide-react";
+import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/PasswordStrengthMeter";
 
 export default function Register() {
   const { register, error } = useAuth();
@@ -19,6 +20,9 @@ export default function Register() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!checkPasswordStrength(password).isValid) {
+      return; // meter shows requirements
+    }
     setLoading(true);
     const ok = await register(name, email, password, currency);
     setLoading(false);
@@ -54,10 +58,11 @@ export default function Register() {
             </div>
             <div>
               <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Password</Label>
-              <Input type="password" required minLength={6} value={password}
+              <Input type="password" required minLength={8} value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 data-testid="register-password-input"
                 className="mt-1.5 border-[#E7E5DF] focus-visible:ring-[#2A4F4F]" />
+              <PasswordStrengthMeter password={password} />
             </div>
             <div>
               <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Currency</Label>
@@ -81,7 +86,7 @@ export default function Register() {
               </div>
             )}
 
-            <Button type="submit" disabled={loading}
+            <Button type="submit" disabled={loading || !checkPasswordStrength(password).isValid}
               data-testid="register-submit-button"
               className="w-full bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full h-11">
               {loading ? "Ban raha hai…" : "Account banao"}

@@ -6,8 +6,112 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Bell, Trash2, AlertTriangle, FileText, Shield } from "lucide-react";
+import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+
+function PinSection() {
+  const [pinStatus, setPinStatus] = React.useState(null);
+  const [openDialog, setOpenDialog] = React.useState(false);
+  const [pin, setPin] = React.useState("");
+  const [confirmPin, setConfirmPin] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  const loadStatus = async () => {
+    try {
+      const { data } = await http.get("/auth/pin/status");
+      setPinStatus(data.enabled);
+    } catch { /* ignore */ }
+  };
+  React.useEffect(() => { loadStatus(); }, []);
+
+  const save = async () => {
+    if (pin !== confirmPin) return toast.error("PIN match nahi ho raha");
+    if (pin.length < 4) return toast.error("PIN minimum 4 digits");
+    setSaving(true);
+    try {
+      await http.post("/auth/pin/set", { pin, password });
+      toast.success("PIN set ho gaya! 🔒");
+      setOpenDialog(false);
+      setPin(""); setConfirmPin(""); setPassword("");
+      loadStatus();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "PIN set nahi ho paya");
+    }
+    setSaving(false);
+  };
+
+  const remove = async () => {
+    if (!window.confirm("PIN remove karna hai?")) return;
+    try {
+      await http.delete("/auth/pin");
+      toast.success("PIN remove ho gaya");
+      loadStatus();
+    } catch { toast.error("Nahi ho paya"); }
+  };
+
+  return (
+    <div className="bg-white border border-[#E7E5DF] rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <KeyRound className="w-4 h-4 text-[#2A4F4F]" />
+        <div className="font-heading font-semibold text-[#1C1917]">PIN Login</div>
+      </div>
+      <div className="text-xs text-[#78716C] mb-3">4-6 digit PIN se fast login karo</div>
+      {pinStatus === null ? (
+        <div className="text-xs text-[#78716C]">Loading…</div>
+      ) : pinStatus ? (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 text-xs text-[#3B6446] bg-[#4A7C59]/10 border border-[#4A7C59]/20 rounded-lg px-3 py-2">
+            ✓ PIN Enabled
+          </div>
+          <Button size="sm" variant="outline" onClick={remove} data-testid="pin-remove-btn"
+            className="border-[#D96C52] text-[#D96C52] hover:bg-[#D96C52]/10 rounded-full">
+            Remove
+          </Button>
+        </div>
+      ) : (
+        <Button onClick={() => setOpenDialog(true)} data-testid="pin-setup-btn"
+          className="w-full bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full">
+          <KeyRound className="w-4 h-4 mr-1" /> PIN Set Karo
+        </Button>
+      )}
+
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>PIN Set Karo</DialogTitle>
+            <DialogDescription>4-6 digit numeric PIN chuno. Password se authorize karo.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Naya PIN</Label>
+              <Input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                data-testid="pin-new-input" value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
+                className="text-2xl text-center tracking-[0.5em] font-heading font-bold" placeholder="••••" />
+            </div>
+            <div>
+              <Label>PIN Confirm</Label>
+              <Input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+                data-testid="pin-confirm-input" value={confirmPin}
+                onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ""))}
+                className="text-2xl text-center tracking-[0.5em] font-heading font-bold" placeholder="••••" />
+            </div>
+            <div>
+              <Label>Current Password (authorize)</Label>
+              <Input type="password" data-testid="pin-password-input" value={password}
+                onChange={e => setPassword(e.target.value)} />
+            </div>
+            <Button onClick={save} disabled={saving} data-testid="pin-save-btn"
+              className="w-full bg-[#2A4F4F] text-white rounded-full">
+              {saving ? "Save ho raha…" : "PIN Save Karo"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -112,6 +216,8 @@ export default function Settings() {
             <div className="text-xs text-[#78716C]">Aapke browser mein support nahi hai.</div>
           )}
         </Section>
+
+        <PinSection />
 
         <Section icon={Download} title="Data Export" desc="Aapka pura data JSON mein download karo.">
           <Button onClick={exportAll} disabled={exporting}

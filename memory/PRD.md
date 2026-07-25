@@ -72,6 +72,16 @@
   - Status badge on each goal (color-coded pills).
   - Contribute dialog shows daily suggestion tip.
 
+### v10 (25 Jul 2026) — Auth Security Hardening
+  - **🔐 Strong password enforcement** — Server-side `validate_password_strength()`: 8+ chars, uppercase, lowercase, digit, special char. Client-side `PasswordStrengthMeter` component with 5-bar visual + checklist.
+  - **🔑 4-6 digit PIN login** — `POST /auth/pin/set` (requires current password), `POST /auth/pin/verify` (login via email+PIN), `DELETE /auth/pin`, `GET /auth/pin/status`. Rate-limited: 5 failed attempts → 15 min lock (`pin_attempts` collection).
+  - **📧 Forgot / Reset Password** — `POST /auth/forgot-password` generates secure token (1hr expiry, `password_reset_tokens` collection with TTL), calls `_send_reset_email()`. `POST /auth/reset-password` validates token + strong password + sets new hash. Frontend `ForgotPassword.jsx` + `ResetPassword.jsx` pages.
+  - **Resend integration** — `_send_reset_email` uses `resend` Python SDK if `RESEND_API_KEY` env set, else falls back to logging + returns `dev_link` in response (dev mode). Beautiful Hinglish HTML email template with brand.
+  - **Login page redesigned** — Tabs for Password / PIN login modes. "Bhool gaye?" link → `/forgot-password`.
+  - **Register page** — Password strength meter with real-time feedback. Submit disabled until strong.
+  - **Settings page** — New "PIN Login" section with setup dialog (PIN + confirm PIN + current password).
+  - Requires user action: Add `RESEND_API_KEY` env in Railway to enable actual email sending (currently `dev_link` returned in response).
+
 ## Data Model
 - `users` — id, email (unique), name, password_hash, currency, personal_ledger_id, current_ledger_id
 - `ledgers` — id, name, type (personal/shared), owner_user_id, members[], invite_code

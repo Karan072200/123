@@ -19,6 +19,8 @@ import Terms from "@/pages/Terms";
 import Settings from "@/pages/Settings";
 import Goals from "@/pages/Goals";
 import Subscriptions from "@/pages/Subscriptions";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -55,6 +57,8 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
             <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+            <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
             <Route path="/transactions" element={<Protected><Transactions /></Protected>} />
             <Route path="/udhaar" element={<Protected><Udhaar /></Protected>} />
