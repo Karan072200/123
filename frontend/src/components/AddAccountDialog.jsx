@@ -49,7 +49,7 @@ export default function AddAccountDialog({ open, onOpenChange, onDone }) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-heading">Naya Account</DialogTitle>
-          <DialogDescription>Savings, Current, Cash — jo bhi ho.</DialogDescription>
+          <DialogDescription>Savings, Current, Emergency Fund, Investment — jo bhi ho.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

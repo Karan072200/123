@@ -233,9 +233,52 @@ class LoginIn(BaseModel):
     password: str
 
 
+class PinSetIn(BaseModel):
+    pin: str  # 4-6 digits
+    password: str  # current password to authorize
+
+
+class PinVerifyIn(BaseModel):
+    email: EmailStr
+    pin: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str
+
+
+def validate_password_strength(password: str) -> tuple[bool, str]:
+    """Returns (is_valid, error_message)"""
+    import re
+    if len(password) < 8:
+        return False, "Password kam se kam 8 characters ka hona chahiye"
+    if not re.search(r"[A-Z]", password):
+        return False, "Password me ek uppercase letter (A-Z) hona chahiye"
+    if not re.search(r"[a-z]", password):
+        return False, "Password me ek lowercase letter (a-z) hona chahiye"
+    if not re.search(r"[0-9]", password):
+        return False, "Password me ek number (0-9) hona chahiye"
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?~`]", password):
+        return False, "Password me ek special character (!@#$%^&* etc.) hona chahiye"
+    return True, ""
+
+
+def validate_pin(pin: str) -> tuple[bool, str]:
+    if not pin.isdigit():
+        return False, "PIN sirf numbers ka hona chahiye"
+    if len(pin) < 4 or len(pin) > 6:
+        return False, "PIN 4 se 6 digits ka hona chahiye"
+    return True, ""
+
+
 class AccountIn(BaseModel):
     name: str
-    type: Literal["savings", "current", "cash", "wallet", "credit_card", "other"] = "savings"
+    type: Literal["savings", "current", "cash", "wallet", "credit_card", "emergency", "investment", "other"] = "savings"
     opening_balance: float = 0.0
     currency: str = "INR"
     color: str = "#2A4F4F"
@@ -308,6 +351,12 @@ async def register(body: RegisterIn, response: Response):
     email = body.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Enforce strong password
+    ok, err = validate_password_strength(body.password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
     uid = str(uuid.uuid4())
     personal_id = f"pl_{uid}"
     now = datetime.now(timezone.utc).isoformat()
@@ -403,6 +452,191 @@ async def google_auth(body: GoogleAuthIn, response: Response):
 async def logout(response: Response):
     response.delete_cookie("access_token", path="/", domain=".apkamunim.com")
     return {"ok": True}
+
+
+# ----- PIN Authentication -----
+@api.post("/auth/pin/set")
+async def set_pin(body: PinSetIn, user=Depends(get_current_user)):
+    """Set or update 4-6 digit PIN. Requires current password to authorize."""
+    ok, err = validate_pin(body.pin)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    # Verify password
+    full = await db.users.find_one({"id": user["id"]})
+    if not full or not verify_password(body.password, full["password_hash"]):
+        raise HTTPException(status_code=401, detail="Password galat hai")
+    pin_hash = hash_password(body.pin)
+    await db.users.update_one({"id": user["id"]}, {"$set": {"pin_hash": pin_hash}})
+    return {"ok": True, "message": "PIN set ho gaya!"}
+
+
+@api.delete("/auth/pin")
+async def delete_pin(user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"pin_hash": ""}})
+    return {"ok": True}
+
+
+@api.get("/auth/pin/status")
+async def pin_status(user=Depends(get_current_user)):
+    full = await db.users.find_one({"id": user["id"]}, {"pin_hash": 1})
+    return {"enabled": bool(full and full.get("pin_hash"))}
+
+
+@api.post("/auth/pin/verify")
+async def verify_pin(body: PinVerifyIn, response: Response):
+    """Login via email + PIN combination."""
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    if not user or not user.get("pin_hash"):
+        raise HTTPException(status_code=401, detail="Invalid credentials or PIN not set")
+    # Rate limit: track failed PIN attempts
+    now_ts = datetime.now(timezone.utc)
+    attempts_doc = await db.pin_attempts.find_one({"email": email})
+    if attempts_doc and attempts_doc.get("locked_until"):
+        locked_until = datetime.fromisoformat(attempts_doc["locked_until"])
+        if now_ts < locked_until:
+            wait_min = int((locked_until - now_ts).total_seconds() / 60) + 1
+            raise HTTPException(status_code=429, detail=f"Bahut galat PIN — {wait_min} min me try karo")
+
+    if not verify_password(body.pin, user["pin_hash"]):
+        # Increment failed attempts
+        fails = (attempts_doc.get("count", 0) if attempts_doc else 0) + 1
+        update = {"count": fails, "email": email, "last_at": now_ts.isoformat()}
+        if fails >= 5:
+            update["locked_until"] = (now_ts + timedelta(minutes=15)).isoformat()
+            update["count"] = 0
+        await db.pin_attempts.update_one({"email": email}, {"$set": update}, upsert=True)
+        raise HTTPException(status_code=401, detail=f"Galat PIN ({fails}/5)")
+
+    # Success — clear attempts
+    await db.pin_attempts.delete_one({"email": email})
+    token = create_access_token(user["id"], email)
+    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+                        max_age=60 * 60 * 24 * 7, path="/")
+    return {"id": user["id"], "email": email, "name": user["name"],
+            "currency": user.get("currency", "INR"), "token": token}
+
+
+# ----- Forgot / Reset Password -----
+def _send_reset_email(to_email: str, name: str, reset_link: str):
+    """Send password reset email via Resend if configured. Fallback: log to console."""
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    sender = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev").strip()
+
+    if not api_key or api_key == "your_resend_key_here":
+        logger.warning("Resend not configured — reset link (dev mode): %s -> %s", to_email, reset_link)
+        return {"dev_link": reset_link}
+
+    try:
+        import resend as resend_lib
+        resend_lib.api_key = api_key
+        html = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #F5F2ED; color: #1C1917;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="display: inline-block; padding: 12px 20px; background: #2A4F4F; color: #E8B365; border-radius: 12px; font-size: 22px; font-weight: 800;">
+              Apka Munim 🎩
+            </div>
+          </div>
+          <div style="background: white; padding: 32px 24px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+            <h1 style="margin: 0 0 12px; font-size: 24px; color: #1C1917;">Namaste {name or 'friend'}! 👋</h1>
+            <p style="font-size: 15px; line-height: 1.6; color: #57534E;">
+              Aapne apne <strong>Apka Munim</strong> account ka password reset karne ke liye request bheji hai.
+            </p>
+            <p style="font-size: 15px; line-height: 1.6; color: #57534E;">
+              Neeche wale button pe click karke naya password set karo. Yeh link <strong>60 minute</strong> tak valid hai.
+            </p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="{reset_link}" style="background: #2A4F4F; color: white; padding: 14px 32px; text-decoration: none; border-radius: 999px; font-weight: 600; display: inline-block; font-size: 15px;">
+                Password Reset Karo
+              </a>
+            </div>
+            <p style="font-size: 13px; color: #78716C; margin-top: 24px;">
+              Ya yeh link copy karke browser me paste karo:<br>
+              <span style="color: #2A4F4F; word-break: break-all; font-size: 12px;">{reset_link}</span>
+            </p>
+            <hr style="border: none; border-top: 1px solid #E7E5DF; margin: 24px 0;">
+            <p style="font-size: 12px; color: #A8A29E; line-height: 1.5;">
+              ⚠️ Agar aapne yeh request nahi bheji, toh is email ko ignore karo — aapka account safe hai.
+            </p>
+          </div>
+          <div style="text-align: center; margin-top: 24px; font-size: 12px; color: #A8A29E;">
+            Made with ❤️ in India · <a href="https://apkamunim.com" style="color: #2A4F4F;">apkamunim.com</a>
+          </div>
+        </div>
+        """
+        params = {
+            "from": sender,
+            "to": [to_email],
+            "subject": "🔐 Apka Munim — Password Reset",
+            "html": html,
+        }
+        result = resend_lib.Emails.send(params)
+        logger.info("Reset email sent to %s (id=%s)", to_email, result.get("id"))
+        return {"sent": True, "id": result.get("id")}
+    except Exception as e:
+        logger.exception("Failed to send reset email: %s", e)
+        return {"error": str(e), "dev_link": reset_link}
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, request: Request):
+    """Generate reset token + send email. Always returns success even if email doesn't exist (privacy)."""
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        # Do not reveal whether email exists
+        return {"ok": True, "message": "Agar yeh email registered hai, toh reset link bhej diya."}
+
+    import secrets
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    await db.password_reset_tokens.insert_one({
+        "token": token,
+        "user_id": user["id"],
+        "email": email,
+        "expires_at": expires,
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    # Build reset link — use frontend URL from env
+    frontend_url = os.environ.get("FRONTEND_URL", "https://apkamunim.com").rstrip("/")
+    reset_link = f"{frontend_url}/reset-password?token={token}"
+    result = _send_reset_email(email, user.get("name", ""), reset_link)
+
+    resp = {"ok": True, "message": "Reset link bhej diya! Email check karo."}
+    if result.get("dev_link"):
+        # dev mode — return link in response (only when no API key)
+        resp["dev_link"] = result["dev_link"]
+    return resp
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn, response: Response):
+    """Verify token + set new password."""
+    ok, err = validate_password_strength(body.new_password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    doc = await db.password_reset_tokens.find_one({"token": body.token, "used": False})
+    if not doc:
+        raise HTTPException(status_code=400, detail="Invalid ya used token")
+    try:
+        exp = datetime.fromisoformat(doc["expires_at"])
+        if datetime.now(timezone.utc) > exp:
+            raise HTTPException(status_code=400, detail="Token expire ho gaya — dobara request karo")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+    await db.users.update_one({"id": doc["user_id"]},
+                              {"$set": {"password_hash": hash_password(body.new_password)}})
+    await db.password_reset_tokens.update_one({"token": body.token},
+                                              {"$set": {"used": True}})
+    return {"ok": True, "message": "Password reset ho gaya! Ab login karo."}
+
+
+# ----- Auth (rest) -----
 
 
 @api.get("/auth/me")
@@ -1483,6 +1717,7 @@ class GoalIn(BaseModel):
     target_date: Optional[str] = None
     emoji: str = "🎯"
     color: str = "#4A7C59"
+    account_id: Optional[str] = None
 
 
 class GoalUpdate(BaseModel):
@@ -1492,11 +1727,53 @@ class GoalUpdate(BaseModel):
     target_date: Optional[str] = None
     emoji: Optional[str] = None
     color: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 @api.get("/goals")
 async def list_goals(user=Depends(get_current_user)):
     rows = await db.goals.find(scope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Enrich each goal with savings breakdown
+    now = datetime.now(timezone.utc).date()
+    for g in rows:
+        target_amt = float(g.get("target_amount", 0))
+        saved_amt = float(g.get("saved_amount", 0))
+        remaining = max(0, target_amt - saved_amt)
+        pct = round((saved_amt / target_amt * 100) if target_amt > 0 else 0, 1)
+
+        breakdown = {
+            "remaining": round(remaining, 2),
+            "percent": pct,
+            "days_left": None,
+            "per_day": None,
+            "per_week": None,
+            "per_month": None,
+            "status": "on_track",
+        }
+
+        target_date_str = g.get("target_date")
+        if target_date_str and remaining > 0:
+            try:
+                tgt = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+                days = (tgt - now).days
+                if days > 0:
+                    breakdown["days_left"] = days
+                    breakdown["per_day"] = round(remaining / days, 2)
+                    breakdown["per_week"] = round(remaining / (days / 7), 2)
+                    breakdown["per_month"] = round(remaining / (days / 30.44), 2)
+                    if days < 30:
+                        breakdown["status"] = "urgent"
+                    elif days < 90:
+                        breakdown["status"] = "soon"
+                else:
+                    breakdown["status"] = "overdue"
+                    breakdown["days_left"] = 0
+            except Exception:
+                pass
+        elif remaining == 0:
+            breakdown["status"] = "achieved"
+
+        g["breakdown"] = breakdown
     return rows
 
 
@@ -1512,6 +1789,7 @@ async def create_goal(body: GoalIn, user=Depends(get_current_user)):
         "target_date": body.target_date,
         "emoji": body.emoji or "🎯",
         "color": body.color or "#4A7C59",
+        "account_id": body.account_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.goals.insert_one(doc)
@@ -2010,6 +2288,9 @@ async def startup():
     await db.ledgers.create_index("members")
     await db.goals.create_index([("owner_id", 1)])
     await db.subscriptions.create_index([("owner_id", 1), ("next_billing_date", 1)])
+    await db.password_reset_tokens.create_index("token", unique=True)
+    await db.password_reset_tokens.create_index("expires_at")
+    await db.pin_attempts.create_index("email", unique=True)
     logger.info("Apka Munim API started")
 
 
