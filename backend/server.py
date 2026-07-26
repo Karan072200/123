@@ -551,8 +551,10 @@ async def forgot_password(body: ForgotPasswordIn, request: Request):
     result = _send_reset_email(email, user.get("name", ""), reset_link)
 
     resp = {"ok": True, "message": "Reset link bhej diya! Email check karo."}
-    if result.get("dev_link"):
-        # dev mode — return link in response (only when no API key)
+    # Only return dev_link in localhost/development mode
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    is_dev = "localhost" in frontend_url or "127.0.0.1" in frontend_url
+    if result.get("dev_link") and is_dev:
         resp["dev_link"] = result["dev_link"]
     return resp
 
