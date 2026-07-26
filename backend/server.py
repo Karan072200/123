@@ -933,6 +933,55 @@ async def delete_transaction(txn_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+# ----- Global Search -----
+@api.get("/search")
+async def global_search(q: str = "", user=Depends(get_current_user)):
+    """Search across transactions, udhaar, accounts, goals, subscriptions."""
+    query = (q or "").strip()
+    if len(query) < 1:
+        return {"transactions": [], "udhaar": [], "accounts": [], "goals": [], "subscriptions": []}
+
+    import re
+    safe = re.escape(query)
+    rx = {"$regex": safe, "$options": "i"}
+    owner = {"owner_id": user["current_ledger_id"]}
+
+    # numeric amount match for transactions/udhaar
+    amount_match = None
+    try:
+        amount_match = float(query.replace(",", ""))
+    except ValueError:
+        amount_match = None
+
+    txn_or = [{"note": rx}, {"category": rx}, {"account_name": rx}, {"type": rx}]
+    if amount_match is not None:
+        txn_or.append({"amount": amount_match})
+    txns = await db.transactions.find({**owner, "$or": txn_or}, {"_id": 0}) \
+        .sort("date", -1).to_list(15)
+
+    udh_or = [{"person_name": rx}, {"note": rx}, {"type": rx}, {"phone": rx}]
+    if amount_match is not None:
+        udh_or.append({"amount": amount_match})
+    udhaar = await db.udhaar.find({**owner, "$or": udh_or}, {"_id": 0}) \
+        .sort("created_at", -1).to_list(15)
+
+    accounts = await db.accounts.find({**owner, "$or": [{"name": rx}, {"type": rx}]}, {"_id": 0}) \
+        .to_list(15)
+
+    goals = await db.goals.find({**owner, "name": rx}, {"_id": 0}).to_list(15)
+
+    subs = await db.subscriptions.find({**owner, "$or": [{"name": rx}, {"category": rx}]}, {"_id": 0}) \
+        .to_list(15)
+
+    return {
+        "transactions": txns,
+        "udhaar": udhaar,
+        "accounts": accounts,
+        "goals": goals,
+        "subscriptions": subs,
+    }
+
+
 # ----- Udhaar -----
 @api.get("/udhaar")
 async def list_udhaar(user=Depends(get_current_user)):
