@@ -6,9 +6,19 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://apkamunim.com/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://apkamunim.com/register</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apkamunim.com/forgot-password</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
   </url>
   <url>
     <loc>https://apkamunim.com/privacy</loc>
@@ -21,3 +31,4 @@
     <priority>0.3</priority>
   </url>
 </urlset>
+ 
