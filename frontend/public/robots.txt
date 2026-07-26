@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+Allow: /register
+Allow: /privacy
+Allow: /terms
+
+Disallow: /dashboard
+Disallow: /transactions
+Disallow: /udhaar
+Disallow: /accounts
+Disallow: /reports
+Disallow: /recurring
+Disallow: /budgets
+Disallow: /ledgers
+Disallow: /goals
+Disallow: /subscriptions
+Disallow: /settings
+Disallow: /login
+Disallow: /forgot-password
+Disallow: /reset-password
+
+Sitemap: https://apkamunim.com/sitemap.xml
