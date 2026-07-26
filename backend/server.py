@@ -410,7 +410,6 @@ async def logout(response: Response):
 @api.post("/auth/google")
 async def google_auth(body: GoogleAuthIn, response: Response):
     """Sign in / sign up with Google id_token."""
-    import httpx
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     try:
         async with httpx.AsyncClient(timeout=10) as client:
