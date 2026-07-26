@@ -108,6 +108,17 @@
 - Backend: 51/51 pass (SMS parser 8 scenarios + export + delete cascade + regression)
 - Frontend: full Playwright end-to-end verified
 
+## v11 — Global Search (26 Jul 2026)
+- **Backend**: `GET /api/search?q=<query>` searches transactions (note/category/account/amount), udhaar (person/note/type/phone/amount), accounts (name/type), goals (name), subscriptions (name/category)
+- **Frontend**: Command-palette style modal (`GlobalSearch.jsx`) triggered by:
+  - Sidebar "Search kuch bhi..." button with ⌘K / Ctrl+K hint
+  - Mobile top-nav search icon
+  - Global `Ctrl+K` / `Cmd+K` keyboard shortcut
+- **Categorized results**: Pages/Features (11 pages), Quick Actions (8 including Add Transaction, Toggle Dark Mode, Open AI Chat, Logout), and live data from DB
+- **Fix**: `shouldFilter={false}` on cmdk `<Command>` (was hiding server results due to UUID `value` mismatch)
+- Client-side filters static features/actions; server-side debounced API call (250ms) for user data
+- All results have `data-testid` for automation
+
 ## Backlog / Next Ideas
 - **Push `fix-cross-domain-cookies` branch to GitHub** (SameSite=None fix — critical for Safari/iOS logins)
 - Custom domain setup on Vercel (e.g., apkamunim.com)

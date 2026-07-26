@@ -5,7 +5,7 @@ import { useTheme } from "@/context/ThemeContext";
 import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
   BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
-  Trophy, CreditCard,
+  Trophy, CreditCard, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import ChatWidget from "@/components/ChatWidget";
+import GlobalSearch from "@/components/GlobalSearch";
 import { CURRENCIES, http } from "@/lib/api";
 import { useEffect, useState } from "react";
 
@@ -91,11 +92,26 @@ export default function Layout({ children }) {
   const { user, logout, setCurrency } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const nav = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const doLogout = async () => {
     await logout();
     nav("/login");
   };
+
+  // Cmd+K / Ctrl+K global shortcut
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
   return (
     <div className="min-h-screen flex bg-[#F9F8F6]">
@@ -121,6 +137,19 @@ export default function Layout({ children }) {
         <div className="mb-4">
           <LedgerSwitcher />
         </div>
+
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          data-testid="global-search-trigger"
+          className="mb-4 w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#E7E5DF] bg-[#F9F8F6] hover:bg-[#F2F0EA] text-left transition-colors group"
+        >
+          <Search className="w-4 h-4 text-[#78716C] group-hover:text-[#1C1917]" />
+          <span className="text-sm text-[#78716C] flex-1">Search kuch bhi...</span>
+          <kbd className="hidden md:inline-flex items-center gap-0.5 text-[10px] font-mono text-[#A8A29E] bg-white border border-[#E7E5DF] rounded px-1.5 py-0.5">
+            {isMac ? "⌘" : "Ctrl"} K
+          </kbd>
+        </button>
 
         <nav className="space-y-1 flex-1">
           {navItems.map((n) => (
@@ -171,6 +200,11 @@ export default function Layout({ children }) {
             <span className="font-heading text-lg font-bold text-[#1C1917]">Apka Munim</span>
           </div>
           <div className="flex items-center gap-1">
+            <button onClick={() => setSearchOpen(true)} data-testid="mobile-global-search-trigger"
+              aria-label="Search"
+              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
+              <Search className="w-4 h-4" />
+            </button>
             <button onClick={toggleTheme} data-testid="mobile-theme-toggle"
               className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
               {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -200,6 +234,7 @@ export default function Layout({ children }) {
         <div className="p-6 md:p-8 max-w-7xl mx-auto">{children}</div>
       </main>
       <ChatWidget />
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }
