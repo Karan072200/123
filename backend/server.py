@@ -17,6 +17,9 @@ from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 from google.oauth2 import id_token as google_id_token
@@ -63,6 +66,10 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Apka Munim API")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 async def llm_json_call(system_msg: str, user_msg: str, session_id: str) -> Optional[str]:
@@ -347,7 +354,8 @@ class LedgerJoin(BaseModel):
 
 # ----- Auth Endpoints -----
 @api.post("/auth/register")
-async def register(body: RegisterIn, response: Response):
+@limiter.limit("5/hour")
+async def register(request: Request, body: RegisterIn, response: Response):
     email = body.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -386,7 +394,8 @@ async def register(body: RegisterIn, response: Response):
 
 
 @api.post("/auth/login")
-async def login(body: LoginIn, response: Response):
+@limiter.limit("10/15minutes")
+async def login(request: Request, body: LoginIn, response: Response):
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
@@ -403,7 +412,8 @@ class GoogleAuthIn(BaseModel):
 
 
 @api.post("/auth/google")
-async def google_auth(body: GoogleAuthIn, response: Response):
+@limiter.limit("15/hour")
+async def google_auth(request: Request, body: GoogleAuthIn, response: Response):
     try:
         idinfo = google_id_token.verify_oauth2_token(
             body.credential, google_requests.Request(), GOOGLE_CLIENT_ID
@@ -579,6 +589,7 @@ def _send_reset_email(to_email: str, name: str, reset_link: str):
 
 
 @api.post("/auth/forgot-password")
+@limiter.limit("5/hour")
 async def forgot_password(body: ForgotPasswordIn, request: Request):
     """Generate reset token + send email. Always returns success even if email doesn't exist (privacy)."""
     email = body.email.lower()
