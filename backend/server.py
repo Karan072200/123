@@ -393,6 +393,18 @@ async def register(request: Request, body: RegisterIn, response: Response):
     return {"id": uid, "email": email, "name": body.name, "currency": body.currency, "token": token}
 
 
+# ----- Login activity helper -----
+async def log_login_activity(request: Request, user_id: str, method: str):
+    await db.login_activity.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "method": method,
+        "ip": request.client.host if request.client else "unknown",
+        "user_agent": request.headers.get("user-agent", "unknown"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
 @api.post("/auth/login")
 @limiter.limit("10/15minutes")
 async def login(request: Request, body: LoginIn, response: Response):
@@ -403,6 +415,7 @@ async def login(request: Request, body: LoginIn, response: Response):
     token = create_access_token(user["id"], email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+    await log_login_activity(request, user["id"], "password")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
 
@@ -455,7 +468,17 @@ async def google_auth(request: Request, body: GoogleAuthIn, response: Response):
     token = create_access_token(uid_final, email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+    await log_login_activity(request, uid_final, "google")
     return {"id": uid_final, "email": email, "name": name_final, "token": token}
+
+
+@api.get("/auth/login-activity")
+async def get_login_activity(user=Depends(get_current_user)):
+    """Recent login history for the current account — Gmail-style 'where you're logged in'."""
+    rows = await db.login_activity.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(20)
+    return {"activity": rows}
 
 
 @api.post("/auth/logout")
@@ -807,6 +830,47 @@ async def leave_ledger(ledger_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.get("/analytics/net-worth")
+async def get_net_worth(user=Depends(get_current_user)):
+    """Total assets minus liabilities: all account balances (credit cards counted as debt)
+    plus pending udhaar you're owed, minus pending udhaar you owe."""
+    accs = await db.accounts.find(scope(user), {"_id": 0}).to_list(500)
+    assets = 0.0
+    liabilities = 0.0
+    breakdown = []
+    for a in accs:
+        pipeline = [
+            {"$match": {"owner_id": user["current_ledger_id"], "account_id": a["id"]}},
+            {"$group": {"_id": "$type", "total": {"$sum": "$amount"}}},
+        ]
+        agg = await db.transactions.aggregate(pipeline).to_list(10)
+        income = sum(x["total"] for x in agg if x["_id"] == "income")
+        expense = sum(x["total"] for x in agg if x["_id"] == "expense")
+        balance = round(a.get("opening_balance", 0.0) + income - expense, 2)
+        if a.get("type") == "credit_card":
+            liabilities += abs(balance)
+        else:
+            assets += balance
+        breakdown.append({"name": a["name"], "type": a.get("type"), "balance": balance})
+
+    udhaar_rows = await db.udhaar.find(
+        {"owner_id": user["current_ledger_id"], "status": "pending"}, {"_id": 0}
+    ).to_list(1000)
+    udhaar_owed_to_you = sum(u["amount"] for u in udhaar_rows if u["type"] == "lene")
+    udhaar_you_owe = sum(u["amount"] for u in udhaar_rows if u["type"] == "dene")
+    assets += udhaar_owed_to_you
+    liabilities += udhaar_you_owe
+
+    return {
+        "net_worth": round(assets - liabilities, 2),
+        "total_assets": round(assets, 2),
+        "total_liabilities": round(liabilities, 2),
+        "udhaar_owed_to_you": round(udhaar_owed_to_you, 2),
+        "udhaar_you_owe": round(udhaar_you_owe, 2),
+        "accounts": breakdown,
+    }
+
+
 # ----- Accounts -----
 @api.get("/accounts")
 async def list_accounts(user=Depends(get_current_user)):
@@ -873,6 +937,18 @@ async def compute_budget_alerts(user: dict, category: str) -> list:
         "percent": round(percent, 1),
         "level": level,
     }]
+
+
+@api.get("/budgets/alerts")
+async def get_budget_alerts(user=Depends(get_current_user)):
+    """All current-month budget alerts across every category (dashboard widget)."""
+    budgets = await db.budgets.find({"owner_id": user["current_ledger_id"]}, {"_id": 0}).to_list(200)
+    all_alerts = []
+    for b in budgets:
+        alerts = await compute_budget_alerts(user, b["category"])
+        all_alerts.extend(alerts)
+    all_alerts.sort(key=lambda a: a["percent"], reverse=True)
+    return {"alerts": all_alerts, "count_over": sum(1 for a in all_alerts if a["level"] == "over")}
 
 
 # ----- Transactions -----
@@ -2053,6 +2129,37 @@ async def health_score(user=Depends(get_current_user)):
 
 
 # ----- Streaks -----
+@api.get("/analytics/badges")
+async def get_badges(user=Depends(get_current_user)):
+    """Achievement badges computed from existing activity — no new data needed."""
+    txn_count = await db.transactions.count_documents(scope(user))
+    goals = await db.goals.find(scope(user), {"_id": 0}).to_list(500)
+    completed_goals = sum(1 for g in goals if g.get("saved_amount", 0) >= g.get("target_amount", 0) and g.get("target_amount", 0) > 0)
+    udhaar_settled = await db.udhaar.count_documents({"owner_id": user["current_ledger_id"], "status": "settled"})
+    streak_data = await get_streak(user=user)
+    longest_streak = streak_data.get("longest_streak", 0)
+    budgets_count = await db.budgets.count_documents({"owner_id": user["current_ledger_id"]})
+
+    badges = [
+        {"id": "first_step", "emoji": "👣", "name": "Pehla Kadam", "desc": "Pehla transaction add kiya",
+         "earned": txn_count >= 1},
+        {"id": "century", "emoji": "💯", "name": "Century", "desc": "100 transactions track kiye",
+         "earned": txn_count >= 100},
+        {"id": "streak_7", "emoji": "🔥", "name": "1 Hafta Streak", "desc": "7 din lagatar tracking",
+         "earned": longest_streak >= 7},
+        {"id": "streak_30", "emoji": "🏆", "name": "Consistency King", "desc": "30 din lagatar tracking",
+         "earned": longest_streak >= 30},
+        {"id": "goal_getter", "emoji": "🎯", "name": "Goal Getter", "desc": "Pehla saving goal poora kiya",
+         "earned": completed_goals >= 1},
+        {"id": "clean_slate", "emoji": "🤝", "name": "Clean Slate", "desc": "Ek udhaar settle kiya",
+         "earned": udhaar_settled >= 1},
+        {"id": "planner", "emoji": "📋", "name": "Planner", "desc": "Pehla budget set kiya",
+         "earned": budgets_count >= 1},
+    ]
+    return {"badges": badges, "earned_count": sum(1 for b in badges if b["earned"]), "total_count": len(badges)}
+
+
+
 @api.get("/analytics/streak")
 async def get_streak(user=Depends(get_current_user)):
     """Calculate current tracking streak (consecutive days with at least one transaction)"""
