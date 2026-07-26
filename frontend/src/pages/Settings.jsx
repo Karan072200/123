@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+import LoginActivitySection from "@/components/LoginActivitySection";
+import TwoFactorSection from "@/components/TwoFactorSection";
 
 function PinSection() {
   const [pinStatus, setPinStatus] = React.useState(null);
@@ -218,6 +220,10 @@ export default function Settings() {
         </Section>
 
         <PinSection />
+
+        <TwoFactorSection />
+
+        <LoginActivitySection />
 
         <Section icon={Download} title="Data Export" desc="Aapka pura data JSON mein download karo.">
           <Button onClick={exportAll} disabled={exporting}

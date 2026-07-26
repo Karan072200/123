@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Wallet, TrendingUp, Users, Sparkles, ArrowRight } from "lucide-react";
+import useSEO from "@/hooks/useSEO";
 
 const Feature = ({ icon: Icon, title, desc }) => (
   <div className="bg-white border border-[#E7E5DF] rounded-lg p-6 hover:-translate-y-1 transition-transform">
@@ -14,6 +15,13 @@ const Feature = ({ icon: Icon, title, desc }) => (
 );
 
 export default function Landing() {
+  useSEO({
+    title: "Apka Munim — Hinglish Expense & Udhaar Tracker App",
+    description:
+      "Track income, kharcha aur udhaar (lene-dene) in Hinglish. Multiple accounts, budgets, family ledgers aur AI insights — free, no bank linking zaroori.",
+    path: "/",
+  });
+
   return (
     <div className="min-h-screen paper-grain">
       <nav className="max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
@@ -112,7 +120,7 @@ export default function Landing() {
           se consult karo.
         </div>
         <div className="flex items-center justify-between flex-wrap gap-3 text-xs text-[#78716C]">
-          <div>© 2026 Apka Munim · Made with ♥ in India</div>
+          <div>© 2026 Apka Munim. All rights reserved. Made with ♥ in India</div>
           <div className="flex items-center gap-4">
             <Link to="/privacy" data-testid="footer-privacy-link" className="hover:text-[#2A4F4F]">Privacy</Link>
             <Link to="/terms" data-testid="footer-terms-link" className="hover:text-[#2A4F4F]">Terms</Link>

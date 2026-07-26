@@ -6,8 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Wallet } from "lucide-react";
+import useSEO from "@/hooks/useSEO";
 
 export default function ForgotPassword() {
+  useSEO({
+    title: "Forgot Password | Apka Munim",
+    description: "Apna Apka Munim password reset karo.",
+    path: "/forgot-password",
+    noindex: true,
+  });
+
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
