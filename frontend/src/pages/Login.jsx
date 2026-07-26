@@ -8,8 +8,16 @@ import { Wallet, Lock, KeyRound } from "lucide-react";
 import { http, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
 import { GoogleLogin } from "@react-oauth/google";
+import useSEO from "@/hooks/useSEO";
 
 export default function Login() {
+  useSEO({
+    title: "Login | Apka Munim",
+    description: "Apne Apka Munim account mein login karo aur apna hisab-kitab dekho.",
+    path: "/login",
+    noindex: true,
+  });
+
   const { login, refresh, error } = useAuth();
   const nav = useNavigate();
   const [mode, setMode] = useState("password"); // "password" | "pin"
