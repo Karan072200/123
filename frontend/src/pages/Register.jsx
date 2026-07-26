@@ -9,8 +9,15 @@ import { CURRENCIES } from "@/lib/api";
 import { Wallet } from "lucide-react";
 import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/PasswordStrengthMeter";
 import { GoogleLogin } from "@react-oauth/google";
+import useSEO from "@/hooks/useSEO";
 
 export default function Register() {
+  useSEO({
+    title: "Sign Up Free | Apka Munim",
+    description: "Apka Munim par free account banao aur apna income, kharcha aur udhaar track karna shuru karo.",
+    path: "/register",
+  });
+
   const { register, error } = useAuth();
   const nav = useNavigate();
   const [name, setName] = useState("");
