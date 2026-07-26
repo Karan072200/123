@@ -120,7 +120,7 @@ export default function Landing() {
           se consult karo.
         </div>
         <div className="flex items-center justify-between flex-wrap gap-3 text-xs text-[#78716C]">
-          <div>© 2026 Apka Munim · Made with ♥ in India</div>
+          <div>© 2026 Apka Munim. All rights reserved. Made with ♥ in India</div>
           <div className="flex items-center gap-4">
             <Link to="/privacy" data-testid="footer-privacy-link" className="hover:text-[#2A4F4F]">Privacy</Link>
             <Link to="/terms" data-testid="footer-terms-link" className="hover:text-[#2A4F4F]">Terms</Link>
