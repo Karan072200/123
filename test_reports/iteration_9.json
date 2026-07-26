@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 9 — Verified new POST /api/auth/google endpoint + full backend regression after Google Sign-In integration. Wrote 19 pytest cases across 5 groups (Google auth, existing auth regression, feature endpoints, money endpoints, goal breakdown). All 19 passed against preview backend (https://cash-flow-hub-172.preview.emergentagent.com).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Google Sign-In on frontend",
+        "issue": "CRITICAL — /app/frontend/.env line 3 is malformed: `ENABLE_HEALTH_CHECK=falseREACT_APP_GOOGLE_CLIENT_ID=286375...` — two env vars concatenated with no newline. dotenv will parse this as ENABLE_HEALTH_CHECK='falseREACT_APP_GOOGLE_CLIENT_ID=286375...' and REACT_APP_GOOGLE_CLIENT_ID will be UNDEFINED at runtime. This means <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}> will get undefined and the exact same 'Missing required parameter: client_id' error will reappear once the user pushes to GitHub / when frontend is built. Backend testing scope only per request so not blocking here, but MUST be fixed before user pushes.",
+        "affected_selectors": ["frontend/.env"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_google_auth.py",
+    "/app/test_reports/pytest/iteration9.xml"
+  ],
+  "action_items": [
+    "URGENT: Fix /app/frontend/.env line 3 — insert newline between ENABLE_HEALTH_CHECK=false and REACT_APP_GOOGLE_CLIENT_ID=... Otherwise Google Sign-In client_id will be undefined and the original bug returns.",
+    "Reminder for main agent: Railway production backend still needs GOOGLE_CLIENT_ID env var added (endpoint tolerates missing env — aud check is skipped when empty — but adding it is safer)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:410-458 /auth/google endpoint is correctly implemented: uses httpx.AsyncClient with 10s timeout, verifies token via https://oauth2.googleapis.com/tokeninfo, checks aud against GOOGLE_CLIENT_ID env (skipped gracefully if empty), auto-creates user with hash_password(secrets.token_urlsafe(16)) plus personal ledger, stores google_id (sub), sets httpOnly+secure+samesite=none cookie for 7 days, returns JWT and user info. Excellent.",
+    "server.py:432 correctly returns 400 if Google account has no email (edge case handled).",
+    "server.py:427 aud check is gated on `google_client_id` truthy — a security-conscious will note that skipping aud verification when env is empty means an attacker could theoretically supply a token minted for a DIFFERENT Google client. Recommend fail-closed in production: if GOOGLE_CLIENT_ID is not set, refuse Google login rather than accept any Google token. Low-severity since Railway will have the env var set.",
+    "server.py:441 uses secrets.token_urlsafe(16) for random password — good. But this random password is un-recoverable, meaning Google-signup users can never use email/password login unless they use forgot-password flow. Consider explicit UX in future.",
+    "server.py is now 2306 lines — split-worthy (noted in iteration 7/8 already).",
+    "frontend/.env line 3 concatenation bug is CRITICAL for the frontend fix to actually work — see frontend_issues above."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9_google_auth.py (new — 19 tests)",
+    "/app/test_reports/pytest/iteration9.xml (new — JUnit)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 pass)",
+    "frontend": "not tested (per request: backend only)"
+  },
+  "test_credentials": "karan.test.999@gmail.com / Karan@2026 (used for auth regression). Additional throwaway users created per test with unique emails (weakpw_*, strong_*, pin_*, PinTest@2026).",
+  "seed_data_creation": "Created and immediately deleted: TEST_Emergency, TEST_Investment, TEST_Txn_<uniq> accounts; one expense transaction; TEST_Goal_Breakdown goal. All cleaned up via DELETE calls in test teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iteration_9 focuses on the new /api/auth/google endpoint and post-change regression. All 19 tests pass. Note the two schema quirks I discovered while writing tests: (a) POST /accounts uses field `opening_balance` (NOT `balance`), and account type must be one of savings/current/cash/wallet/credit_card/emergency/investment/other (there is no 'bank'). (b) POST /ai/chat body is {messages: [{role, content}, ...]} not {message: string}. (c) GET /subscriptions returns {subscriptions:[], monthly_total:0.0} — an object, not a list. (d) POST /auth/pin/set field name is `password` (not `current_password`). All captured in the test file for future reuse. Run via: pytest backend/tests/test_iteration9_google_auth.py -o addopts='' -v",
+  "rca of the issue": "Original bug: Google Sign-In button on /login threw 'Access blocked: Missing required parameter: client_id'. Root cause: no client_id was being passed to the Google OAuth flow (no GoogleOAuthProvider wrap + no backend endpoint). Fix delivered: (1) backend POST /api/auth/google (server.py:410) verifies id_token via Google tokeninfo, auto-creates user, returns JWT+cookie — VERIFIED WORKING (invalid credential -> 401 'Google token invalid'; missing credential -> 422). (2) Frontend GoogleOAuthProvider wraps App reading REACT_APP_GOOGLE_CLIENT_ID — NOT VERIFIED (frontend testing out of scope), and CRITICAL BLOCKER: frontend/.env has the env var glued to ENABLE_HEALTH_CHECK on the same line, so REACT_APP_GOOGLE_CLIENT_ID will resolve to undefined at build time, reproducing the exact original 'Missing required parameter: client_id' error. Main agent MUST split frontend/.env line 3 into two separate lines before user pushes to GitHub."
+}

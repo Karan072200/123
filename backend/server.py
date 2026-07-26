@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -244,6 +245,11 @@ class ForgotPasswordIn(BaseModel):
     email: EmailStr
 
 
+class GoogleAuthIn(BaseModel):
+    credential: str  # JWT id_token from Google
+    currency: str = "INR"
+
+
 class ResetPasswordIn(BaseModel):
     token: str
     new_password: str
@@ -399,6 +405,57 @@ async def login(body: LoginIn, response: Response):
 async def logout(response: Response):
     response.delete_cookie("access_token", path="/")
     return {"ok": True}
+
+
+@api.post("/auth/google")
+async def google_auth(body: GoogleAuthIn, response: Response):
+    """Sign in / sign up with Google id_token."""
+    import httpx
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}")
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail="Google token invalid")
+        info = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Google verify failed: %s", e)
+        raise HTTPException(status_code=401, detail="Google verification failed")
+
+    if google_client_id and info.get("aud") != google_client_id:
+        raise HTTPException(status_code=401, detail="Google client ID mismatch")
+
+    email = (info.get("email") or "").lower()
+    name = info.get("name") or email.split("@")[0]
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email")
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        # Auto-create account
+        uid = str(uuid.uuid4())
+        personal_id = f"pl_{uid}"
+        now = datetime.now(timezone.utc).isoformat()
+        random_pwd = secrets.token_urlsafe(16)
+        await db.users.insert_one({
+            "id": uid, "email": email, "name": name, "currency": body.currency,
+            "password_hash": hash_password(random_pwd), "google_id": info.get("sub"),
+            "current_ledger_id": personal_id, "personal_ledger_id": personal_id,
+            "created_at": now,
+        })
+        await db.ledgers.insert_one({
+            "id": personal_id, "name": "Personal", "type": "personal",
+            "owner_id": uid, "members": [uid], "created_at": now,
+        })
+        user = await db.users.find_one({"id": uid})
+
+    token = create_access_token(user["id"], email)
+    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
+                        max_age=60 * 60 * 24 * 7, path="/")
+    return {"id": user["id"], "email": email, "name": user["name"],
+            "currency": user.get("currency", "INR"), "token": token}
 
 
 # ----- PIN Authentication -----

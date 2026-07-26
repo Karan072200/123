@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Wallet, Lock, KeyRound } from "lucide-react";
 import { http, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Login() {
   const { login, refresh, error } = useAuth();
@@ -131,6 +132,29 @@ export default function Login() {
             Naye ho? <Link to="/register" data-testid="login-to-register-link"
               className="text-[#2A4F4F] font-semibold hover:underline">Account banao</Link>
           </p>
+
+          <div className="mt-5 flex items-center gap-3">
+            <div className="flex-1 h-px bg-[#E7E5DF]" />
+            <span className="text-xs text-[#78716C]">OR</span>
+            <div className="flex-1 h-px bg-[#E7E5DF]" />
+          </div>
+
+          <div className="mt-4 flex justify-center" data-testid="google-login-wrapper">
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                try {
+                  await http.post("/auth/google", { credential: credentialResponse.credential });
+                  await refresh();
+                  nav("/dashboard");
+                } catch (e) {
+                  toast.error(formatApiError(e?.response?.data?.detail));
+                }
+              }}
+              onError={() => toast.error("Google login failed")}
+              theme="outline" size="large" text="signin_with" shape="pill"
+              width="320"
+            />
+          </div>
         </div>
       </div>
     </div>
