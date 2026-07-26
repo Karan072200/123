@@ -3096,6 +3096,318 @@ async def voice_parse_transaction(body: VoiceParseIn, user=Depends(get_current_u
     }
 
 
+# =========================
+# ===== v13: 5 New Features
+# =========================
+
+# ----- What-If Simulator -----
+class WhatIfIn(BaseModel):
+    reduce_category: Optional[str] = None
+    reduce_amount_monthly: float = 0
+    goal_id: Optional[str] = None
+
+
+@api.post("/whatif/simulate")
+async def whatif_simulate(body: WhatIfIn, user=Depends(get_current_user)):
+    """Simulate: agar main X category ka Y/month kam karu to 1yr/goal completion mein kitna asar."""
+    monthly = max(0.0, float(body.reduce_amount_monthly or 0))
+    yearly = monthly * 12
+    five_year = monthly * 60
+
+    goal_impact = None
+    if body.goal_id:
+        g = await db.goals.find_one({"id": body.goal_id, "owner_id": user["current_ledger_id"]}, {"_id": 0})
+        if g:
+            target = float(g.get("target_amount") or 0)
+            saved = float(g.get("saved_amount") or 0)
+            remaining = max(0.0, target - saved)
+            months_faster = 0
+            if monthly > 0 and remaining > 0:
+                months_faster = int(remaining / monthly)
+            goal_impact = {
+                "goal_name": g.get("name"),
+                "remaining": remaining,
+                "months_faster_to_complete": months_faster,
+                "would_complete_by": (datetime.now(timezone.utc) + timedelta(days=months_faster * 30)).date().isoformat() if months_faster > 0 else None,
+            }
+
+    # Current category avg
+    current_monthly_avg = None
+    if body.reduce_category:
+        pipeline = [
+            {"$match": {"owner_id": user["current_ledger_id"], "category": body.reduce_category, "type": "expense"}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+        ]
+        docs = await db.transactions.aggregate(pipeline).to_list(1)
+        if docs and docs[0].get("total"):
+            # Divide by months elapsed (min 1)
+            oldest = await db.transactions.find(
+                {"owner_id": user["current_ledger_id"], "category": body.reduce_category, "type": "expense"},
+                {"date": 1, "_id": 0}
+            ).sort("date", 1).limit(1).to_list(1)
+            months_span = 1
+            if oldest:
+                try:
+                    d = oldest[0]["date"]
+                    if isinstance(d, str):
+                        d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+                    delta_days = max(1, (datetime.now(timezone.utc) - d).days)
+                    months_span = max(1, delta_days / 30)
+                except Exception:
+                    months_span = 1
+            current_monthly_avg = round(docs[0]["total"] / months_span, 2)
+
+    return {
+        "reduce_category": body.reduce_category,
+        "reduce_amount_monthly": monthly,
+        "current_monthly_avg": current_monthly_avg,
+        "yearly_savings": yearly,
+        "five_year_savings": five_year,
+        "goal_impact": goal_impact,
+    }
+
+
+# ----- Category Auto-Suggestion (rule-based learning) -----
+@api.get("/categories/suggest")
+async def suggest_category(q: str = "", user=Depends(get_current_user)):
+    """Returns top 3 categories user has used before for similar note keywords."""
+    q = (q or "").strip().lower()
+    if len(q) < 2:
+        return {"suggestions": []}
+
+    import re
+    safe = re.escape(q)
+    rx = {"$regex": safe, "$options": "i"}
+
+    # Aggregate: find transactions where note or category contains query, group by category, sort by count
+    pipeline = [
+        {"$match": {"owner_id": user["current_ledger_id"], "$or": [{"note": rx}, {"category": rx}]}},
+        {"$group": {"_id": "$category", "count": {"$sum": 1}, "last_used": {"$max": "$date"}}},
+        {"$sort": {"count": -1, "last_used": -1}},
+        {"$limit": 3},
+    ]
+    docs = await db.transactions.aggregate(pipeline).to_list(3)
+    suggestions = [{"category": d["_id"], "count": d["count"]} for d in docs if d.get("_id")]
+    return {"suggestions": suggestions}
+
+
+# ----- Emergency Fund Health Check -----
+@api.get("/analytics/emergency-fund")
+async def emergency_fund_health(user=Depends(get_current_user)):
+    """Calculate months of expense coverage from savings + emergency accounts."""
+    # Sum balances of savings + emergency accounts
+    accounts = await db.accounts.find(
+        {"owner_id": user["current_ledger_id"], "type": {"$in": ["savings", "emergency"]}},
+        {"_id": 0}
+    ).to_list(200)
+    total_saved = sum(float(a.get("balance") or 0) for a in accounts)
+
+    # Avg monthly expense over last 3 months
+    three_months_ago = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    pipeline = [
+        {"$match": {"owner_id": user["current_ledger_id"], "type": "expense", "date": {"$gte": three_months_ago}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]
+    docs = await db.transactions.aggregate(pipeline).to_list(1)
+    total_expense_3mo = float(docs[0]["total"]) if docs else 0.0
+    avg_monthly_expense = round(total_expense_3mo / 3, 2) if total_expense_3mo > 0 else 0
+
+    months_covered = 0
+    if avg_monthly_expense > 0:
+        months_covered = round(total_saved / avg_monthly_expense, 1)
+
+    ideal_months = 6
+    ideal_fund = round(avg_monthly_expense * ideal_months, 0)
+    shortfall = max(0, ideal_fund - total_saved)
+
+    # Status
+    if months_covered >= 6:
+        status = "excellent"
+        message = f"Bhai zabardast! Aapke paas {months_covered} mahine ka emergency fund hai. Peace of mind! 🎉"
+    elif months_covered >= 3:
+        status = "good"
+        message = f"{months_covered} mahine cover ho jaate hain. Ideal 6 mahine hai — ₹{int(shortfall):,} aur bacha lo."
+    elif months_covered >= 1:
+        status = "warning"
+        message = f"Sirf {months_covered} mahine ka fund hai. Emergency mein tight ho jayega — target 3-6 mahine karo."
+    else:
+        status = "critical"
+        message = "Bhai emergency fund almost zero hai! Chhota sa bhi shuru karo — ₹1000/mahina bhi kaafi hai starting mein."
+
+    return {
+        "total_saved": total_saved,
+        "avg_monthly_expense": avg_monthly_expense,
+        "months_covered": months_covered,
+        "ideal_months": ideal_months,
+        "ideal_fund_amount": ideal_fund,
+        "shortfall": shortfall,
+        "status": status,
+        "message": message,
+    }
+
+
+# ----- Warranty & Bill Vault -----
+class WarrantyIn(BaseModel):
+    item_name: str
+    category: Optional[str] = "Electronics"
+    purchase_date: str
+    warranty_months: int = 12
+    amount: Optional[float] = 0
+    store: Optional[str] = None
+    note: Optional[str] = None
+    receipt_image: Optional[str] = None  # base64 data URL
+
+
+@api.get("/warranties")
+async def list_warranties(user=Depends(get_current_user)):
+    rows = await db.warranties.find({"owner_id": user["current_ledger_id"]}, {"_id": 0}) \
+        .sort("purchase_date", -1).to_list(200)
+    # Compute days_left for each
+    today = datetime.now(timezone.utc).date()
+    for w in rows:
+        try:
+            pd = datetime.fromisoformat(w["purchase_date"]).date() if isinstance(w["purchase_date"], str) else w["purchase_date"]
+            expiry = pd + timedelta(days=int(w.get("warranty_months", 12)) * 30)
+            w["expiry_date"] = expiry.isoformat()
+            w["days_left"] = (expiry - today).days
+            w["status"] = "active" if w["days_left"] > 30 else ("expiring" if w["days_left"] > 0 else "expired")
+        except Exception:
+            w["expiry_date"] = None
+            w["days_left"] = None
+            w["status"] = "unknown"
+    return rows
+
+
+@api.post("/warranties")
+async def create_warranty(body: WarrantyIn, user=Depends(get_current_user)):
+    w_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": w_id,
+        "owner_id": user["current_ledger_id"],
+        "item_name": body.item_name,
+        "category": body.category or "Electronics",
+        "purchase_date": body.purchase_date,
+        "warranty_months": int(body.warranty_months or 12),
+        "amount": float(body.amount or 0),
+        "store": body.store,
+        "note": body.note,
+        "receipt_image": body.receipt_image,
+        "created_at": now,
+    }
+    await db.warranties.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/warranties/{warranty_id}")
+async def update_warranty(warranty_id: str, body: WarrantyIn, user=Depends(get_current_user)):
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    await db.warranties.update_one(
+        {"id": warranty_id, "owner_id": user["current_ledger_id"]},
+        {"$set": updates}
+    )
+    return {"ok": True}
+
+
+@api.delete("/warranties/{warranty_id}")
+async def delete_warranty(warranty_id: str, user=Depends(get_current_user)):
+    await db.warranties.delete_one({"id": warranty_id, "owner_id": user["current_ledger_id"]})
+    return {"ok": True}
+
+
+# ----- Kids Pocket Money Tracker -----
+class KidIn(BaseModel):
+    name: str
+    emoji: Optional[str] = "🧒"
+    monthly_allowance: float = 0
+    balance: float = 0
+
+
+class KidEntryIn(BaseModel):
+    kid_id: str
+    type: str  # "allowance" | "spend" | "save"
+    amount: float
+    note: Optional[str] = None
+    category: Optional[str] = None
+
+
+@api.get("/kids")
+async def list_kids(user=Depends(get_current_user)):
+    return await db.kids.find({"owner_id": user["current_ledger_id"]}, {"_id": 0}) \
+        .sort("created_at", -1).to_list(50)
+
+
+@api.post("/kids")
+async def create_kid(body: KidIn, user=Depends(get_current_user)):
+    kid_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": kid_id,
+        "owner_id": user["current_ledger_id"],
+        "name": body.name,
+        "emoji": body.emoji or "🧒",
+        "monthly_allowance": float(body.monthly_allowance or 0),
+        "balance": float(body.balance or 0),
+        "total_saved": 0.0,
+        "total_spent": 0.0,
+        "created_at": now,
+    }
+    await db.kids.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/kids/{kid_id}")
+async def delete_kid(kid_id: str, user=Depends(get_current_user)):
+    await db.kids.delete_one({"id": kid_id, "owner_id": user["current_ledger_id"]})
+    await db.kid_entries.delete_many({"kid_id": kid_id, "owner_id": user["current_ledger_id"]})
+    return {"ok": True}
+
+
+@api.get("/kids/{kid_id}/entries")
+async def kid_entries(kid_id: str, user=Depends(get_current_user)):
+    return await db.kid_entries.find(
+        {"kid_id": kid_id, "owner_id": user["current_ledger_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+
+
+@api.post("/kids/entry")
+async def add_kid_entry(body: KidEntryIn, user=Depends(get_current_user)):
+    kid = await db.kids.find_one({"id": body.kid_id, "owner_id": user["current_ledger_id"]})
+    if not kid:
+        raise HTTPException(status_code=404, detail="Kid not found")
+
+    amount = float(body.amount or 0)
+    entry_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    inc = {}
+    if body.type == "allowance":
+        inc = {"balance": amount}
+    elif body.type == "spend":
+        inc = {"balance": -amount, "total_spent": amount}
+    elif body.type == "save":
+        inc = {"total_saved": amount}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid type. Use allowance/spend/save.")
+
+    await db.kids.update_one({"id": body.kid_id}, {"$inc": inc})
+    entry = {
+        "id": entry_id,
+        "kid_id": body.kid_id,
+        "owner_id": user["current_ledger_id"],
+        "type": body.type,
+        "amount": amount,
+        "note": body.note,
+        "category": body.category,
+        "created_at": now,
+    }
+    await db.kid_entries.insert_one(entry)
+    entry.pop("_id", None)
+    return entry
+
+
 # ----- Health -----
 @api.get("/")
 async def root():

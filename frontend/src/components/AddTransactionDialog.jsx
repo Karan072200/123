@@ -20,6 +20,25 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
   const [category, setCategory] = useState("Food");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [categorySuggestions, setCategorySuggestions] = useState([]);
+
+  // Auto-suggest category based on note (learns from history)
+  useEffect(() => {
+    const q = (note || "").trim();
+    if (q.length < 3 || isEdit) {
+      setCategorySuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await http.get("/categories/suggest", { params: { q } });
+        setCategorySuggestions(data?.suggestions || []);
+      } catch {
+        setCategorySuggestions([]);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [note, isEdit]);
 
   useEffect(() => {
     if (open) {
@@ -152,6 +171,26 @@ export default function AddTransactionDialog({ open, onOpenChange, accounts, onD
             <Textarea value={note} onChange={(e) => setNote(e.target.value)}
               data-testid="txn-note-input"
               className="mt-1.5" rows={2} placeholder="Kya liya, kaha liya…" />
+            {categorySuggestions.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap" data-testid="category-suggestions">
+                <span className="text-xs text-[#78716C]">💡 Aapne pehle use ki:</span>
+                {categorySuggestions.map((s) => (
+                  <button
+                    key={s.category}
+                    type="button"
+                    onClick={() => setCategory(s.category)}
+                    data-testid={`suggest-cat-${s.category}`}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      category === s.category
+                        ? "bg-[#2A4F4F] text-white border-[#2A4F4F]"
+                        : "bg-[#F2F0EA] text-[#57534E] border-[#E7E5DF] hover:bg-[#E7E5DF]"
+                    }`}
+                  >
+                    {s.category} <span className="opacity-60">×{s.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <Button onClick={submit} disabled={saving}

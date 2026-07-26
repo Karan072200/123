@@ -35,16 +35,21 @@ import {
   LineChart,
   Calculator,
   FileUp,
+  ShieldCheck,
+  Baby,
 } from "lucide-react";
 
 // Static pages/features — always searchable client-side
 const FEATURES = [
-  { label: "Dashboard", desc: "Overview, balance, streak, health score", to: "/dashboard", icon: LayoutDashboard, keywords: "home main balance streak health" },
+  { label: "Dashboard", desc: "Overview, balance, streak, health score", to: "/dashboard", icon: LayoutDashboard, keywords: "home main balance streak health emergency fund" },
   { label: "Transactions", desc: "Aaya / Gaya list, add income/expense", to: "/transactions", icon: ArrowLeftRight, keywords: "income expense kharcha aaya gaya paise entry" },
   { label: "Udhaar Tracker", desc: "Kisse lene hai, kisko dene hai", to: "/udhaar", icon: Users, keywords: "loan lene dene borrow lend baaki" },
   { label: "Bill Splits", desc: "Splitwise-style expense sharing", to: "/splits", icon: Split, keywords: "split bill share dinner trip friends splitwise equal share" },
   { label: "Investments", desc: "Mutual Funds, Stocks, SIP, FD, RD tracker", to: "/investments", icon: LineChart, keywords: "investment mutual fund stock sip fd rd portfolio gain loss" },
   { label: "Tax Estimator", desc: "Income tax calculator (India FY 2025-26)", to: "/tax-estimator", icon: Calculator, keywords: "tax income india 80c 80d old new regime freelancer business ca" },
+  { label: "What-If Simulator", desc: "Chhote badlaav se kitna bachega", to: "/what-if", icon: Sparkles, keywords: "what if simulator calculator savings zomato swiggy reduce goal faster" },
+  { label: "Warranty & Bill Vault", desc: "Receipt + warranty tracker with reminders", to: "/warranties", icon: ShieldCheck, keywords: "warranty bill vault receipt reminder expiry tv fridge phone appliance electronics" },
+  { label: "Kids Pocket Money", desc: "Bachcho ki allowance & savings tracker", to: "/kids", icon: Baby, keywords: "kids bachcha pocket money allowance children saving jar aarav aarohi" },
   { label: "Accounts", desc: "Savings, Current, Cash, Wallet, UPI", to: "/accounts", icon: Landmark, keywords: "bank savings current cash wallet upi paytm credit card emergency investment sip fd" },
   { label: "Recurring", desc: "Auto-repeating income/expense", to: "/recurring", icon: Repeat, keywords: "auto repeat monthly weekly salary rent emi" },
   { label: "Budgets", desc: "Monthly category limits + alerts", to: "/budgets", icon: Target, keywords: "budget limit category alert" },
@@ -58,6 +63,9 @@ const FEATURES = [
 const QUICK_ACTIONS = [
   { label: "Add Transaction", desc: "Naya income ya kharcha add karo", to: "/transactions?add=1", icon: ArrowLeftRight, keywords: "add new income expense" },
   { label: "Import Bank Statement", desc: "CSV/PDF upload karo, auto-parse", to: "/transactions?import=1", icon: FileUp, keywords: "import csv pdf statement bank upload parse" },
+  { label: "Add Warranty", desc: "Naya bill/warranty save karo", to: "/warranties", icon: ShieldCheck, keywords: "add new warranty bill receipt" },
+  { label: "Add Kid Allowance", desc: "Bachche ko pocket money do", to: "/kids", icon: Baby, keywords: "add kid child allowance pocket money" },
+  { label: "Try What-If", desc: "Savings simulate karo", to: "/what-if", icon: Sparkles, keywords: "what if simulate savings calculator" },
   { label: "Add Account", desc: "Naya bank/wallet account", to: "/accounts?add=1", icon: Landmark, keywords: "add new bank account" },
   { label: "Add Goal", desc: "Nayi saving goal set karo", to: "/goals?add=1", icon: Trophy, keywords: "add new goal target" },
   { label: "Add Subscription", desc: "Netflix/Spotify plan add karo", to: "/subscriptions?add=1", icon: CreditCard, keywords: "add new subscription" },

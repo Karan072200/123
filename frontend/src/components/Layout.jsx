@@ -5,7 +5,7 @@ import { useTheme } from "@/context/ThemeContext";
 import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
   BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
-  Trophy, CreditCard, Split, LineChart, Calculator, Search,
+  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,6 +25,9 @@ const navItems = [
   { to: "/splits", label: "Bill Splits", icon: Split, testid: "nav-splits" },
   { to: "/investments", label: "Investments", icon: LineChart, testid: "nav-investments" },
   { to: "/tax-estimator", label: "Tax Estimator", icon: Calculator, testid: "nav-tax" },
+  { to: "/what-if", label: "What-If Sim", icon: Sparkles, testid: "nav-whatif" },
+  { to: "/warranties", label: "Warranty Vault", icon: ShieldCheck, testid: "nav-warranties" },
+  { to: "/kids", label: "Kids Money", icon: Baby, testid: "nav-kids" },
   { to: "/accounts", label: "Accounts", icon: Landmark, testid: "nav-accounts" },
   { to: "/recurring", label: "Recurring", icon: Repeat, testid: "nav-recurring" },
   { to: "/budgets", label: "Budgets", icon: Target, testid: "nav-budgets" },

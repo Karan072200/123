@@ -133,6 +133,15 @@ User uploaded a zip with 4 fully-built features that were merged into the codeba
 - New deps: `slowapi`, `pdfplumber`, `python-dateutil`, `google-auth`
 - `package.json` engines: relaxed from `node: 24.x` to `>=20.x` (build compatibility)
 
+## v13 — 5 New Features (26 Jul 2026)
+1. **What-If Simulator** (`/what-if`): Interactive calc — "Agar Food ₹500/mo kam karu?" → yearly + 5-yr savings + goal completion months. Backend: `POST /api/whatif/simulate` with optional `goal_id` linking. Uses transaction history to compute `current_monthly_avg`.
+2. **Auto-Categorization Learning** (rule-based): Backend `GET /api/categories/suggest?q=<text>` aggregates user's past transactions where note/category matches, returns top 3 by usage count. Frontend: `AddTransactionDialog.jsx` debounced call while typing note → shows suggestion chips like `Food ×5`, click to apply.
+3. **Emergency Fund Health Check** (Dashboard widget): `GET /api/analytics/emergency-fund` computes months of coverage from savings+emergency accounts / avg 3-mo expenses. 4-tier status (excellent/good/warning/critical) with color-coded gradient card + progress bar + Hinglish message.
+4. **Warranty & Bill Vault** (`/warranties`): Full CRUD (`/api/warranties`) with receipt photo upload (base64, 2MB limit). Auto-computes expiry from purchase_date + warranty_months. Days-left counter, status badges (Active/Expiring/Expired). Stats: total items, expiring soon count, total value.
+5. **Kids Pocket Money Tracker** (`/kids`): Parent adds kids with emoji, monthly allowance, starting balance. Log entries: allowance / spend / save with auto-balance update. Backend: `/api/kids`, `/api/kids/entry`, `/api/kids/{id}/entries`. Individual kid cards with full history.
+
+**Integration**: GlobalSearch updated to include all 3 new nav pages + 3 new quick actions (Add Warranty, Add Kid Allowance, Try What-If).
+
 ## Backlog / Next Ideas
 - **Push `fix-cross-domain-cookies` branch to GitHub** (SameSite=None fix — critical for Safari/iOS logins)
 - Custom domain setup on Vercel (e.g., apkamunim.com)
