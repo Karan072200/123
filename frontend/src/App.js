@@ -24,9 +24,12 @@ import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import InstallPrompt from "@/components/InstallPrompt";
+import useSEO from "@/hooks/useSEO";
 
 const Protected = ({ children }) => {
   const { user } = useAuth();
+  // Logged-in app pages hold private data and shouldn't be indexed by search engines.
+  useSEO({ noindex: true, path: typeof window !== "undefined" ? window.location.pathname : "/" });
   if (user === null) {
     return (
       <div className="min-h-screen flex items-center justify-center text-[#57534E]">
