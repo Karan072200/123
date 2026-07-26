@@ -13,3 +13,4 @@ resend==2.34.0
 google-auth
 requests
 slowapi>=0.1.9
+python-multipart>=0.0.9
