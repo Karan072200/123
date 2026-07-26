@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Wallet, TrendingUp, Users, Sparkles, ArrowRight } from "lucide-react";
+import useSEO from "@/hooks/useSEO";
 
 const Feature = ({ icon: Icon, title, desc }) => (
   <div className="bg-white border border-[#E7E5DF] rounded-lg p-6 hover:-translate-y-1 transition-transform">
@@ -14,6 +15,13 @@ const Feature = ({ icon: Icon, title, desc }) => (
 );
 
 export default function Landing() {
+  useSEO({
+    title: "Apka Munim — Hinglish Expense & Udhaar Tracker App",
+    description:
+      "Track income, kharcha aur udhaar (lene-dene) in Hinglish. Multiple accounts, budgets, family ledgers aur AI insights — free, no bank linking zaroori.",
+    path: "/",
+  });
+
   return (
     <div className="min-h-screen paper-grain">
       <nav className="max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
