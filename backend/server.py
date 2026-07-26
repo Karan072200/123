@@ -14,6 +14,7 @@ import logging
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta
+from dateutil import parser as dateutil_parser
 from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -40,6 +41,12 @@ except Exception:
     _HAS_ANTHROPIC = False
 
 try:
+    import pdfplumber
+    _HAS_PDFPLUMBER = True
+except Exception:
+    _HAS_PDFPLUMBER = False
+
+try:
     from groq import AsyncGroq
     _HAS_GROQ = True
 except Exception:
@@ -50,6 +57,7 @@ JWT_ALGORITHM = "HS256"
 JWT_SECRET = os.environ["JWT_SECRET"]
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
+COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", "").strip() or None
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -389,6 +397,19 @@ class SplitIn(BaseModel):
     notes: Optional[str] = ""
 
 
+class ParsedStatementRow(BaseModel):
+    date: str
+    type: Literal["income", "expense"]
+    amount: float
+    category: str = "Other"
+    note: str = ""
+
+
+class ConfirmImportIn(BaseModel):
+    account_id: str
+    transactions: List[ParsedStatementRow]
+
+
 class TaxEstimateIn(BaseModel):
     annual_income: float
     regime: Literal["old", "new"] = "new"
@@ -451,7 +472,7 @@ async def register(request: Request, body: RegisterIn, response: Response):
     })
     token = create_access_token(uid, email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
-                        domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+                        domain=COOKIE_DOMAIN, max_age=60 * 60 * 24 * 7, path="/")
     return {"id": uid, "email": email, "name": body.name, "currency": body.currency, "token": token}
 
 
@@ -490,14 +511,10 @@ async def login(request: Request, body: LoginIn, response: Response):
 
     token = create_access_token(user["id"], email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
-                        domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+                        domain=COOKIE_DOMAIN, max_age=60 * 60 * 24 * 7, path="/")
     await log_login_activity(request, user["id"], "password")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
-
-
-class GoogleAuthIn(BaseModel):
-    credential: str
 
 
 @api.post("/auth/google")
@@ -543,7 +560,7 @@ async def google_auth(request: Request, body: GoogleAuthIn, response: Response):
 
     token = create_access_token(uid_final, email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
-                        domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+                        domain=COOKIE_DOMAIN, max_age=60 * 60 * 24 * 7, path="/")
     await log_login_activity(request, uid_final, "google")
     return {"id": uid_final, "email": email, "name": name_final, "token": token}
 
@@ -613,7 +630,7 @@ async def verify_2fa_code(request: Request, body: TwoFAVerifyIn, response: Respo
         raise HTTPException(status_code=404, detail="User not found")
     token = create_access_token(user["id"], email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
-                        domain=".apkamunim.com", max_age=60 * 60 * 24 * 7, path="/")
+                        domain=COOKIE_DOMAIN, max_age=60 * 60 * 24 * 7, path="/")
     await log_login_activity(request, user["id"], "2fa")
     return {"id": user["id"], "email": email, "name": user["name"],
             "currency": user.get("currency", "INR"), "token": token}
@@ -621,58 +638,8 @@ async def verify_2fa_code(request: Request, body: TwoFAVerifyIn, response: Respo
 
 @api.post("/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/", domain=".apkamunim.com")
+    response.delete_cookie("access_token", path="/", domain=COOKIE_DOMAIN)
     return {"ok": True}
-
-
-@api.post("/auth/google")
-async def google_auth(body: GoogleAuthIn, response: Response):
-    """Sign in / sign up with Google id_token."""
-    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}")
-        if r.status_code != 200:
-            raise HTTPException(status_code=401, detail="Google token invalid")
-        info = r.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Google verify failed: %s", e)
-        raise HTTPException(status_code=401, detail="Google verification failed")
-
-    if google_client_id and info.get("aud") != google_client_id:
-        raise HTTPException(status_code=401, detail="Google client ID mismatch")
-
-    email = (info.get("email") or "").lower()
-    name = info.get("name") or email.split("@")[0]
-    if not email:
-        raise HTTPException(status_code=400, detail="Google account has no email")
-
-    user = await db.users.find_one({"email": email})
-    if not user:
-        # Auto-create account
-        uid = str(uuid.uuid4())
-        personal_id = f"pl_{uid}"
-        now = datetime.now(timezone.utc).isoformat()
-        random_pwd = secrets.token_urlsafe(16)
-        await db.users.insert_one({
-            "id": uid, "email": email, "name": name, "currency": body.currency,
-            "password_hash": hash_password(random_pwd), "google_id": info.get("sub"),
-            "current_ledger_id": personal_id, "personal_ledger_id": personal_id,
-            "created_at": now,
-        })
-        await db.ledgers.insert_one({
-            "id": personal_id, "name": "Personal", "type": "personal",
-            "owner_id": uid, "members": [uid], "created_at": now,
-        })
-        user = await db.users.find_one({"id": uid})
-
-    token = create_access_token(user["id"], email)
-    response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
-                        max_age=60 * 60 * 24 * 7, path="/")
-    return {"id": user["id"], "email": email, "name": user["name"],
-            "currency": user.get("currency", "INR"), "token": token}
 
 
 # ----- PIN Authentication -----
@@ -964,7 +931,7 @@ async def delete_my_account(response: Response, user=Depends(get_current_user)):
     await db.ledgers.delete_one({"id": personal_ledger_id})
     # Delete user
     await db.users.delete_one({"id": uid})
-    response.delete_cookie("access_token", path="/", domain=".apkamunim.com")
+    response.delete_cookie("access_token", path="/", domain=COOKIE_DOMAIN)
     return {"ok": True}
 
 
@@ -1332,6 +1299,236 @@ async def get_my_referral(user=Depends(get_current_user)):
 
 
 # ----- Bulk CSV Import (bank statement / manual bulk entry) -----
+# ----- Bank Statement Import (CSV / PDF, any bank format) -----
+
+_EXPENSE_KEYWORDS = {
+    "Food": ["swiggy", "zomato", "restaurant", "cafe", "dine", "eatery", "food"],
+    "Groceries": ["grocery", "bigbasket", "blinkit", "zepto", "dmart", "grofers", "supermarket", "instamart"],
+    "Rent": ["rent", "landlord"],
+    "Transport": ["uber", "ola", "petrol", "diesel", "fuel", "metro", "irctc", "railway", "fastag", "parking"],
+    "Shopping": ["amazon", "flipkart", "myntra", "ajio", "mall", "shopping", "nykaa"],
+    "Bills": ["electricity", "water bill", "recharge", "broadband", "wifi", "gas bill", "dth", "bill payment", "bses", "postpaid", "prepaid"],
+    "Entertainment": ["netflix", "prime video", "hotstar", "bookmyshow", "spotify", "movie", "pvr", "inox", "youtube"],
+    "Health": ["hospital", "pharmacy", "medical", "apollo", "clinic", "doctor", "medplus"],
+    "Education": ["school", "college", "tuition fee", "udemy", "coursera", "byju", "unacademy"],
+    "Travel": ["makemytrip", "goibibo", "airlines", "indigo", "spicejet", "oyo", "airbnb", "flight", "yatra"],
+}
+_INCOME_KEYWORDS = {
+    "Salary": ["salary", "payroll", "sal credit"],
+    "Business": ["sales", "invoice", "business income"],
+    "Freelance": ["freelance", "upwork", "fiverr"],
+    "Investment": ["dividend", "interest credit", "redemption", "mutual fund"],
+    "Gift": ["gift"],
+}
+_IGNORE_ROW_KEYWORDS = ["opening balance", "closing balance", "balance b/f", "balance c/f", "carried forward"]
+
+
+def guess_category(description: str, txn_type: str) -> str:
+    desc = (description or "").lower()
+    table = _INCOME_KEYWORDS if txn_type == "income" else _EXPENSE_KEYWORDS
+    for category, keywords in table.items():
+        if any(k in desc for k in keywords):
+            return category
+    return "Other Income" if txn_type == "income" else "Other"
+
+
+def parse_flexible_date(value: str) -> Optional[str]:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        dt = dateutil_parser.parse(value, dayfirst=True, fuzzy=True)
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def clean_amount(value: str) -> Optional[float]:
+    if value is None:
+        return None
+    v = str(value).strip().replace(",", "").replace("₹", "").replace("Rs.", "").replace("Rs", "").strip()
+    if not v or v in ("-", "--"):
+        return None
+    negative = False
+    if v.startswith("(") and v.endswith(")"):
+        negative = True
+        v = v[1:-1]
+    if v.upper().endswith("DR"):
+        negative = True
+        v = v[:-2].strip()
+    if v.upper().endswith("CR"):
+        v = v[:-2].strip()
+    try:
+        num = float(v)
+    except Exception:
+        return None
+    return -abs(num) if negative else num
+
+
+def find_col(headers: List[str], keywords: List[str]) -> Optional[str]:
+    for h in headers:
+        low = h.lower().strip()
+        if any(k in low for k in keywords):
+            return h
+    return None
+
+
+def normalize_statement_rows(raw_rows: List[dict]) -> List[dict]:
+    """Takes list of raw dict rows (header -> string value) from ANY bank's CSV/PDF
+    and turns them into clean transaction rows: {date, type, amount, category, note}."""
+    if not raw_rows:
+        return []
+    headers = list(raw_rows[0].keys())
+    date_col = find_col(headers, ["date"])
+    desc_col = find_col(headers, ["narration", "description", "particular", "details", "remarks", "transaction"])
+    debit_col = find_col(headers, ["debit", "withdrawal", "dr amount", "amount debited"])
+    credit_col = find_col(headers, ["credit", "deposit", "cr amount", "amount credited"])
+    amount_col = None if (debit_col or credit_col) else find_col(headers, ["amount"])
+
+    results = []
+    for row in raw_rows:
+        desc = (row.get(desc_col) or "").strip() if desc_col else ""
+        if any(k in desc.lower() for k in _IGNORE_ROW_KEYWORDS):
+            continue
+
+        date_str = parse_flexible_date(row.get(date_col)) if date_col else None
+        if not date_str:
+            continue
+
+        txn_type, amount = None, None
+        if debit_col or credit_col:
+            debit_val = clean_amount(row.get(debit_col)) if debit_col else None
+            credit_val = clean_amount(row.get(credit_col)) if credit_col else None
+            if debit_val and debit_val != 0:
+                txn_type, amount = "expense", abs(debit_val)
+            elif credit_val and credit_val != 0:
+                txn_type, amount = "income", abs(credit_val)
+        elif amount_col:
+            val = clean_amount(row.get(amount_col))
+            if val is not None and val != 0:
+                txn_type = "expense" if val < 0 else "income"
+                amount = abs(val)
+
+        if not txn_type or not amount:
+            continue
+
+        results.append({
+            "date": date_str,
+            "type": txn_type,
+            "amount": round(amount, 2),
+            "category": guess_category(desc, txn_type),
+            "note": desc[:140],
+        })
+    return results
+
+
+def extract_csv_rows(raw_bytes: bytes) -> List[dict]:
+    text = raw_bytes.decode("utf-8", errors="ignore")
+    lines = text.splitlines()
+    header_idx = 0
+    for i, line in enumerate(lines[:40]):
+        low = line.lower()
+        if "date" in low and any(k in low for k in ["amount", "debit", "credit", "withdrawal", "deposit", "narration"]):
+            header_idx = i
+            break
+    trimmed = "\n".join(lines[header_idx:])
+    reader = csv.DictReader(io.StringIO(trimmed))
+    return [dict(row) for row in reader if any((v or "").strip() for v in row.values())]
+
+
+def extract_pdf_rows(raw_bytes: bytes) -> List[dict]:
+    if not _HAS_PDFPLUMBER:
+        raise HTTPException(status_code=400, detail="PDF parsing not available on server right now.")
+    headers = None
+    rows = []
+    with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            for table in tables:
+                if not table or len(table) < 2:
+                    continue
+                for r_idx, raw_row in enumerate(table):
+                    cells = [(c or "").strip() for c in raw_row]
+                    low_joined = " ".join(cells).lower()
+                    looks_like_header = "date" in low_joined and any(
+                        k in low_joined for k in ["amount", "debit", "credit", "withdrawal", "deposit", "narration", "balance"]
+                    )
+                    if looks_like_header:
+                        headers = cells
+                        continue
+                    if headers and len(cells) >= 1:
+                        row_dict = {headers[i]: (cells[i] if i < len(cells) else "") for i in range(len(headers))}
+                        rows.append(row_dict)
+    return rows
+
+
+@api.post("/transactions/parse-statement")
+async def parse_statement(account_id: str = Form(...), file: UploadFile = File(...), user=Depends(get_current_user)):
+    """Upload a bank statement (CSV or PDF, any bank's format) and get back a preview
+    of detected transactions. Nothing is saved yet — call /transactions/confirm-import
+    with the (possibly edited) list to actually create them."""
+    acc = await db.accounts.find_one({"id": account_id, "owner_id": user["current_ledger_id"]})
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    raw = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".pdf"):
+        raw_rows = extract_pdf_rows(raw)
+    else:
+        raw_rows = extract_csv_rows(raw)
+
+    parsed = normalize_statement_rows(raw_rows)
+
+    # Basic duplicate check against existing transactions on this account (same date+amount+type)
+    existing = await db.transactions.find(
+        {"account_id": account_id, "owner_id": user["current_ledger_id"]},
+        {"_id": 0, "date": 1, "amount": 1, "type": 1},
+    ).to_list(2000)
+    existing_keys = {(e.get("date", "")[:10], round(e.get("amount", 0), 2), e.get("type")) for e in existing}
+    for row in parsed:
+        row["possible_duplicate"] = (row["date"], row["amount"], row["type"]) in existing_keys
+
+    if not parsed:
+        return {
+            "transactions": [],
+            "count": 0,
+            "message": "Koi transaction detect nahi hua. File format alag ho sakta hai — thoda column headers check kar lo.",
+        }
+    return {"transactions": parsed, "count": len(parsed)}
+
+
+@api.post("/transactions/confirm-import")
+async def confirm_import(body: ConfirmImportIn, user=Depends(get_current_user)):
+    """Bulk-create transactions from a (user-reviewed) parsed statement."""
+    acc = await db.accounts.find_one({"id": body.account_id, "owner_id": user["current_ledger_id"]})
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    inserted = 0
+    docs = []
+    for row in body.transactions:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "owner_id": user["current_ledger_id"],
+            "account_id": body.account_id,
+            "account_name": acc["name"],
+            "type": row.type,
+            "amount": float(row.amount),
+            "category": row.category or "Other",
+            "note": row.note or "",
+            "date": row.date,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source": "statement_import",
+        })
+    if docs:
+        await db.transactions.insert_many(docs)
+        inserted = len(docs)
+    return {"inserted": inserted}
+
+
 @api.post("/transactions/import-csv")
 async def import_transactions_csv(account_id: str = Form(...), file: UploadFile = File(...), user=Depends(get_current_user)):
     """Expects a CSV file with header: date,type,amount,category,note
@@ -1438,17 +1635,17 @@ async def delete_transaction(txn_id: str, user=Depends(get_current_user)):
 # ----- Global Search -----
 @api.get("/search")
 async def global_search(q: str = "", user=Depends(get_current_user)):
-    """Search across transactions, udhaar, accounts, goals, subscriptions."""
+    """Search across transactions, udhaar, accounts, goals, subscriptions, splits, investments."""
     query = (q or "").strip()
+    empty = {"transactions": [], "udhaar": [], "accounts": [], "goals": [], "subscriptions": [], "splits": [], "investments": []}
     if len(query) < 1:
-        return {"transactions": [], "udhaar": [], "accounts": [], "goals": [], "subscriptions": []}
+        return empty
 
     import re
     safe = re.escape(query)
     rx = {"$regex": safe, "$options": "i"}
     owner = {"owner_id": user["current_ledger_id"]}
 
-    # numeric amount match for transactions/udhaar
     amount_match = None
     try:
         amount_match = float(query.replace(",", ""))
@@ -1470,10 +1667,29 @@ async def global_search(q: str = "", user=Depends(get_current_user)):
     accounts = await db.accounts.find({**owner, "$or": [{"name": rx}, {"type": rx}]}, {"_id": 0}) \
         .to_list(15)
 
-    goals = await db.goals.find({**owner, "name": rx}, {"_id": 0}).to_list(15)
+    goals = await db.goals.find({**owner, "name": rx}, {"_id": 0}).to_list(15) \
+        if hasattr(db, "goals") else []
 
     subs = await db.subscriptions.find({**owner, "$or": [{"name": rx}, {"category": rx}]}, {"_id": 0}) \
-        .to_list(15)
+        .to_list(15) if hasattr(db, "subscriptions") else []
+
+    splits = []
+    try:
+        splits = await db.splits.find({**owner, "$or": [{"title": rx}, {"paid_by": rx}]}, {"_id": 0}) \
+            .sort("created_at", -1).to_list(15)
+    except Exception:
+        splits = []
+
+    investments = []
+    try:
+        inv_or = [{"name": rx}, {"type": rx}, {"note": rx}]
+        if amount_match is not None:
+            inv_or.append({"invested_amount": amount_match})
+            inv_or.append({"current_value": amount_match})
+        investments = await db.investments.find({**owner, "$or": inv_or}, {"_id": 0}) \
+            .sort("created_at", -1).to_list(15)
+    except Exception:
+        investments = []
 
     return {
         "transactions": txns,
@@ -1481,6 +1697,8 @@ async def global_search(q: str = "", user=Depends(get_current_user)):
         "accounts": accounts,
         "goals": goals,
         "subscriptions": subs,
+        "splits": splits,
+        "investments": investments,
     }
 
 

@@ -109,15 +109,29 @@
 - Frontend: full Playwright end-to-end verified
 
 ## v11 — Global Search (26 Jul 2026)
-- **Backend**: `GET /api/search?q=<query>` searches transactions (note/category/account/amount), udhaar (person/note/type/phone/amount), accounts (name/type), goals (name), subscriptions (name/category)
+- **Backend**: `GET /api/search?q=<query>` searches transactions (note/category/account/amount), udhaar (person/note/type/phone/amount), accounts (name/type), goals (name), subscriptions (name/category), **splits, investments**
 - **Frontend**: Command-palette style modal (`GlobalSearch.jsx`) triggered by:
   - Sidebar "Search kuch bhi..." button with ⌘K / Ctrl+K hint
   - Mobile top-nav search icon
   - Global `Ctrl+K` / `Cmd+K` keyboard shortcut
-- **Categorized results**: Pages/Features (11 pages), Quick Actions (8 including Add Transaction, Toggle Dark Mode, Open AI Chat, Logout), and live data from DB
+- **Categorized results**: Pages/Features (14 pages incl. Splits/Investments/Tax), Quick Actions (11 incl. Import Statement, Add Split/Investment), and live data from DB
 - **Fix**: `shouldFilter={false}` on cmdk `<Command>` (was hiding server results due to UUID `value` mismatch)
-- Client-side filters static features/actions; server-side debounced API call (250ms) for user data
-- All results have `data-testid` for automation
+
+## v12 — 4 Major Features Merged (26 Jul 2026)
+User uploaded a zip with 4 fully-built features that were merged into the codebase:
+1. **Bill Splitting (Splitwise-style)** — `/api/splits` CRUD + `Splits.jsx` page. Equal-split helper, per-participant settle, WhatsApp/clipboard reminders.
+2. **Bank Statement Import (CSV/PDF)** — `POST /api/transactions/parse-statement` + `POST /api/transactions/confirm-import` with column auto-detection, category auto-guess (Swiggy→Food etc.), duplicate detection. Uses `pdfplumber` + `python-dateutil`. Frontend: `ImportStatementDialog.jsx` on Transactions page.
+3. **Investment Tracking** — `/api/investments` CRUD + `/summary` + `Investments.jsx` page. Types: MF/Stock/SIP/FD/RD. Gain/loss tracking, FD/RD maturity date warnings.
+4. **Tax Estimator (India FY 2025-26)** — `POST /api/tax/estimate` + `TaxEstimator.jsx` page. Old vs New regime, 80C/80D deductions, "FY se bharo" auto-fill from app income, 4% cess.
+
+**Other components added in v12**: `BadgesCard`, `BudgetAlertsWidget`, `LoginActivitySection`, `NetWorthCard`, `TwoFactorSection` (Settings 2FA), `useSEO.js` hook.
+
+**Auth changes**: Login Activity tracker, 2FA endpoints (`/api/auth/2fa/enable/disable/send-code/verify`), slowapi rate-limiting on Google auth.
+
+**Config changes**:
+- `COOKIE_DOMAIN` env var added (was hardcoded `.apkamunim.com` — broke preview envs; now env-driven, empty = current host)
+- New deps: `slowapi`, `pdfplumber`, `python-dateutil`, `google-auth`
+- `package.json` engines: relaxed from `node: 24.x` to `>=20.x` (build compatibility)
 
 ## Backlog / Next Ideas
 - **Push `fix-cross-domain-cookies` branch to GitHub** (SameSite=None fix — critical for Safari/iOS logins)

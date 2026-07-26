@@ -14,3 +14,5 @@ google-auth
 requests
 slowapi>=0.1.9
 python-multipart>=0.0.9
+python-dateutil>=2.9.0
+pdfplumber>=0.11.4

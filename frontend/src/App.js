@@ -20,6 +20,9 @@ import Terms from "@/pages/Terms";
 import Settings from "@/pages/Settings";
 import Goals from "@/pages/Goals";
 import Subscriptions from "@/pages/Subscriptions";
+import Splits from "@/pages/Splits";
+import Investments from "@/pages/Investments";
+import TaxEstimator from "@/pages/TaxEstimator";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
@@ -74,6 +77,9 @@ function App() {
             <Route path="/ledgers" element={<Protected><Ledgers /></Protected>} />
             <Route path="/goals" element={<Protected><Goals /></Protected>} />
             <Route path="/subscriptions" element={<Protected><Subscriptions /></Protected>} />
+            <Route path="/splits" element={<Protected><Splits /></Protected>} />
+            <Route path="/investments" element={<Protected><Investments /></Protected>} />
+            <Route path="/tax-estimator" element={<Protected><TaxEstimator /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />

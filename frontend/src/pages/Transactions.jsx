@@ -4,7 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import SmsParseDialog from "@/components/SmsParseDialog";
-import { Trash2, Plus, ArrowUpRight, ArrowDownRight, Pencil, MessageSquare } from "lucide-react";
+import ImportStatementDialog from "@/components/ImportStatementDialog";
+import { Trash2, Plus, ArrowUpRight, ArrowDownRight, Pencil, MessageSquare, UploadCloud } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ export default function Transactions() {
   const [accounts, setAccounts] = useState([]);
   const [open, setOpen] = useState(false);
   const [openSms, setOpenSms] = useState(false);
+  const [openImport, setOpenImport] = useState(false);
   const [editing, setEditing] = useState(null);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -66,6 +68,11 @@ export default function Transactions() {
             data-testid="txn-page-sms-btn"
             className="border-[#2A4F4F]/30 text-[#2A4F4F] hover:bg-[#2A4F4F]/5 rounded-full">
             <MessageSquare className="w-4 h-4 mr-1" /> SMS Parse
+          </Button>
+          <Button variant="outline" onClick={() => setOpenImport(true)}
+            data-testid="txn-page-import-btn"
+            className="border-[#2A4F4F]/30 text-[#2A4F4F] hover:bg-[#2A4F4F]/5 rounded-full">
+            <UploadCloud className="w-4 h-4 mr-1" /> Import Statement
           </Button>
           <Button onClick={() => { setEditing(null); setOpen(true); }}
             data-testid="txn-page-add-btn"
@@ -151,6 +158,7 @@ export default function Transactions() {
       <AddTransactionDialog open={open} onOpenChange={setOpen}
         accounts={accounts} existing={editing} onDone={load} />
       <SmsParseDialog open={openSms} onOpenChange={setOpenSms} accounts={accounts} onDone={load} />
+      <ImportStatementDialog open={openImport} onOpenChange={setOpenImport} accounts={accounts} onDone={load} />
     </div>
   );
 }

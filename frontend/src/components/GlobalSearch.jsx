@@ -31,6 +31,10 @@ import {
   TrendingUp,
   TrendingDown,
   Wallet,
+  Split,
+  LineChart,
+  Calculator,
+  FileUp,
 } from "lucide-react";
 
 // Static pages/features — always searchable client-side
@@ -38,6 +42,9 @@ const FEATURES = [
   { label: "Dashboard", desc: "Overview, balance, streak, health score", to: "/dashboard", icon: LayoutDashboard, keywords: "home main balance streak health" },
   { label: "Transactions", desc: "Aaya / Gaya list, add income/expense", to: "/transactions", icon: ArrowLeftRight, keywords: "income expense kharcha aaya gaya paise entry" },
   { label: "Udhaar Tracker", desc: "Kisse lene hai, kisko dene hai", to: "/udhaar", icon: Users, keywords: "loan lene dene borrow lend baaki" },
+  { label: "Bill Splits", desc: "Splitwise-style expense sharing", to: "/splits", icon: Split, keywords: "split bill share dinner trip friends splitwise equal share" },
+  { label: "Investments", desc: "Mutual Funds, Stocks, SIP, FD, RD tracker", to: "/investments", icon: LineChart, keywords: "investment mutual fund stock sip fd rd portfolio gain loss" },
+  { label: "Tax Estimator", desc: "Income tax calculator (India FY 2025-26)", to: "/tax-estimator", icon: Calculator, keywords: "tax income india 80c 80d old new regime freelancer business ca" },
   { label: "Accounts", desc: "Savings, Current, Cash, Wallet, UPI", to: "/accounts", icon: Landmark, keywords: "bank savings current cash wallet upi paytm credit card emergency investment sip fd" },
   { label: "Recurring", desc: "Auto-repeating income/expense", to: "/recurring", icon: Repeat, keywords: "auto repeat monthly weekly salary rent emi" },
   { label: "Budgets", desc: "Monthly category limits + alerts", to: "/budgets", icon: Target, keywords: "budget limit category alert" },
@@ -45,14 +52,17 @@ const FEATURES = [
   { label: "Subscriptions", desc: "Netflix, Spotify, Prime tracker", to: "/subscriptions", icon: CreditCard, keywords: "netflix spotify prime hotstar recurring monthly plan" },
   { label: "Ledgers (Family)", desc: "Shared family/office khata", to: "/ledgers", icon: Users2, keywords: "shared family office ledger group" },
   { label: "Reports & AI Insights", desc: "Charts, AI analysis, PDF/CSV export", to: "/reports", icon: BarChart3, keywords: "report chart graph ai insights export pdf csv analysis" },
-  { label: "Settings", desc: "Profile, PIN, password, currency", to: "/settings", icon: SettingsIcon, keywords: "settings profile pin password currency preference" },
+  { label: "Settings", desc: "Profile, PIN, password, currency, 2FA", to: "/settings", icon: SettingsIcon, keywords: "settings profile pin password currency preference 2fa two factor" },
 ];
 
 const QUICK_ACTIONS = [
   { label: "Add Transaction", desc: "Naya income ya kharcha add karo", to: "/transactions?add=1", icon: ArrowLeftRight, keywords: "add new income expense" },
+  { label: "Import Bank Statement", desc: "CSV/PDF upload karo, auto-parse", to: "/transactions?import=1", icon: FileUp, keywords: "import csv pdf statement bank upload parse" },
   { label: "Add Account", desc: "Naya bank/wallet account", to: "/accounts?add=1", icon: Landmark, keywords: "add new bank account" },
   { label: "Add Goal", desc: "Nayi saving goal set karo", to: "/goals?add=1", icon: Trophy, keywords: "add new goal target" },
   { label: "Add Subscription", desc: "Netflix/Spotify plan add karo", to: "/subscriptions?add=1", icon: CreditCard, keywords: "add new subscription" },
+  { label: "Add Bill Split", desc: "Naya expense share karo", to: "/splits?add=1", icon: Split, keywords: "add new split bill share" },
+  { label: "Add Investment", desc: "MF/Stock/SIP entry", to: "/investments?add=1", icon: LineChart, keywords: "add new investment mutual fund stock" },
   { label: "Toggle Dark Mode", desc: "Light / Dark theme switch", action: "toggle-theme", icon: Moon, keywords: "dark light theme toggle mode" },
   { label: "Voice Input", desc: "Bolke transaction add karo", to: "/transactions?voice=1", icon: Mic, keywords: "voice bolke speak record microphone" },
   { label: "AI Chat — Munim Ji", desc: "Financial advice chat bot", action: "open-chat", icon: MessageSquareText, keywords: "ai chat munim ji help advice bot" },
