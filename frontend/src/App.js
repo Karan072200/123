@@ -1,6 +1,7 @@
 import React from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { Toaster } from "sonner";
@@ -51,6 +52,7 @@ const PublicOnly = ({ children }) => {
 function App() {
   return (
     <div className="App">
+      <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID || ""}>
       <BrowserRouter>
         <ThemeProvider>
           <AuthProvider>
@@ -80,6 +82,7 @@ function App() {
           </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
+      </GoogleOAuthProvider>
     </div>
   );
 }
