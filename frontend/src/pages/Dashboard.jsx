@@ -10,6 +10,7 @@ import StreakCard from "@/components/StreakCard";
 import VibeCard from "@/components/VibeCard";
 import NetWorthCard from "@/components/NetWorthCard";
 import BadgesCard from "@/components/BadgesCard";
+import EmergencyFundCard from "@/components/EmergencyFundCard";
 import {
   TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
@@ -110,6 +111,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2"><HealthScoreCard /></div>
         <StreakCard />
         <NetWorthCard />
+        <EmergencyFundCard />
         <BadgesCard />
       </div>
 

@@ -23,6 +23,9 @@ import Subscriptions from "@/pages/Subscriptions";
 import Splits from "@/pages/Splits";
 import Investments from "@/pages/Investments";
 import TaxEstimator from "@/pages/TaxEstimator";
+import WhatIf from "@/pages/WhatIf";
+import Warranties from "@/pages/Warranties";
+import KidsMoney from "@/pages/KidsMoney";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
@@ -80,6 +83,9 @@ function App() {
             <Route path="/splits" element={<Protected><Splits /></Protected>} />
             <Route path="/investments" element={<Protected><Investments /></Protected>} />
             <Route path="/tax-estimator" element={<Protected><TaxEstimator /></Protected>} />
+            <Route path="/what-if" element={<Protected><WhatIf /></Protected>} />
+            <Route path="/warranties" element={<Protected><Warranties /></Protected>} />
+            <Route path="/kids" element={<Protected><KidsMoney /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
