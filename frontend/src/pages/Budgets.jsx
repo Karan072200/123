@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Plus, Trash2, Target, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import BudgetAlertsWidget from "@/components/BudgetAlertsWidget";
 
 function AddBudgetDialog({ open, onOpenChange, onDone, existing }) {
   const [category, setCategory] = useState("Food");
@@ -114,6 +115,8 @@ export default function Budgets() {
           <Plus className="w-4 h-4 mr-1" /> Add Budget
         </Button>
       </div>
+
+      <BudgetAlertsWidget />
 
       {rows.length > 0 && (
         <div className="bg-gradient-to-br from-[#2A4F4F] to-[#1F3B3B] rounded-xl p-6 text-white">

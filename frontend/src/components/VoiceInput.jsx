@@ -80,7 +80,7 @@ export default function VoiceInput({ onParsed, disabled }) {
   }
 
   return (
-    <div className="border border-dashed border-[#4A7C59]/40 rounded-xl p-2.5 bg-[#4A7C59]/5">
+    <div className="border border-dashed border-[#4A7C59]/40 rounded-xl p-2.5 bg-[#4A7C59]/5 overflow-hidden">
       <div className="flex items-center gap-2">
         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
           ${listening ? "bg-[#D96C52] animate-pulse" : "bg-[#4A7C59]"}`}>
@@ -93,9 +93,6 @@ export default function VoiceInput({ onParsed, disabled }) {
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-[#3B6446] truncate">
             {listening ? "🎤 Sun raha hoon..." : parsing ? "Parse ho raha hai..." : "Bolke add karo"}
-          </div>
-          <div className="text-[11px] text-[#57534E] truncate italic">
-            {transcript || (!listening && "e.g., \"500 rupaye zomato pe\"")}
           </div>
         </div>
         {listening ? (
@@ -111,6 +108,11 @@ export default function VoiceInput({ onParsed, disabled }) {
           </Button>
         )}
       </div>
+      {(transcript || !listening) && (
+        <div className="text-[11px] text-[#57534E] italic mt-1.5 break-words line-clamp-2">
+          {transcript || "e.g., \"500 rupaye zomato pe\""}
+        </div>
+      )}
     </div>
   );
 }

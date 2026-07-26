@@ -8,6 +8,8 @@ import SmsParseDialog from "@/components/SmsParseDialog";
 import HealthScoreCard from "@/components/HealthScoreCard";
 import StreakCard from "@/components/StreakCard";
 import VibeCard from "@/components/VibeCard";
+import NetWorthCard from "@/components/NetWorthCard";
+import BadgesCard from "@/components/BadgesCard";
 import {
   TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
@@ -103,10 +105,12 @@ export default function Dashboard() {
       {/* Vibe / Meme */}
       <VibeCard />
 
-      {/* Health + Streak */}
+      {/* Health + Streak + Net Worth */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2"><HealthScoreCard /></div>
         <StreakCard />
+        <NetWorthCard />
+        <BadgesCard />
       </div>
 
       {/* Accounts + Recent */}

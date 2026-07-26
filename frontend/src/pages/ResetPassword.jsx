@@ -7,8 +7,16 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/PasswordStrengthMeter";
 import { Wallet } from "lucide-react";
+import useSEO from "@/hooks/useSEO";
 
 export default function ResetPassword() {
+  useSEO({
+    title: "Reset Password | Apka Munim",
+    description: "Apna Apka Munim account ka naya password set karo.",
+    path: "/reset-password",
+    noindex: true,
+  });
+
   const [params] = useSearchParams();
   const token = params.get("token") || "";
   const navigate = useNavigate();

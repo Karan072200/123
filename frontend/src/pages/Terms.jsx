@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Wallet, ArrowLeft } from "lucide-react";
+import useSEO from "@/hooks/useSEO";
 
 const H2 = ({ children }) => (
   <h2 className="font-heading text-xl font-semibold text-[#1C1917] mt-8 mb-2">{children}</h2>
@@ -10,6 +11,12 @@ const P = ({ children }) => (
 );
 
 export default function Terms() {
+  useSEO({
+    title: "Terms & Conditions | Apka Munim",
+    description: "Apka Munim use karne ki terms and conditions padhein.",
+    path: "/terms",
+  });
+
   return (
     <div className="min-h-screen bg-[#F9F8F6] py-10 px-6">
       <div className="max-w-3xl mx-auto">
