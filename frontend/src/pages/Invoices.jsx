@@ -13,6 +13,7 @@ export default function Invoices() {
   const cur = user?.currency || "INR";
   const [items, setItems] = useState([]);
   const [datePreset, setDatePreset] = useState("all");
+  const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [typeFilter, setTypeFilter] = useState("all");
   const nav = useNavigate();
 
@@ -20,7 +21,7 @@ export default function Invoices() {
   useEffect(() => { load(); }, []);
 
   const filtered = React.useMemo(() => {
-    const range = computeRange(datePreset);
+    const range = computeRange(datePreset, customRange);
     return (items || []).filter((inv) => {
       if (typeFilter !== "all" && inv.invoice_type !== typeFilter) return false;
       if (range.from) {
@@ -29,7 +30,7 @@ export default function Invoices() {
       }
       return true;
     });
-  }, [items, datePreset, typeFilter]);
+  }, [items, datePreset, customRange, typeFilter]);
 
   const remove = async (id) => {
     if (!window.confirm("Delete this invoice?")) return;
@@ -57,7 +58,10 @@ export default function Invoices() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <DateFilter value={datePreset} onChange={setDatePreset} />
+        <DateFilter value={datePreset} onChange={(preset, custom) => {
+          setDatePreset(preset);
+          if (custom) setCustomRange(custom);
+        }} />
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
           data-testid="invoice-type-filter"
           className="h-8 px-3 rounded-full text-xs border border-[#E7E5DF] bg-white">

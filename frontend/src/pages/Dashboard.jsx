@@ -48,6 +48,7 @@ export default function Dashboard() {
   const { widgets } = useDashboardPrefs();
   const [summary, setSummary] = useState(null);
   const [datePreset, setDatePreset] = useState("all");
+  const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [accounts, setAccounts] = useState([]);
   const [recent, setRecent] = useState([]);
   const [openTxn, setOpenTxn] = useState(false);
@@ -58,7 +59,7 @@ export default function Dashboard() {
   const load = async () => {
     // Auto-run recurring transactions first (safe to call repeatedly)
     try { await http.post("/recurring/run"); } catch (e) { console.warn("recurring/run failed:", e?.message); }
-    const range = computeRange(datePreset);
+    const range = computeRange(datePreset, customRange);
     const qs = range.from ? `?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}` : "";
     const [s, a, t] = await Promise.all([
       http.get(`/analytics/summary${qs}`).then((r) => r.data).catch(async () => (await http.get("/analytics/summary")).data),
@@ -83,7 +84,10 @@ export default function Dashboard() {
             Aapka Hisab aaj kya bol raha hai?
           </h1>
           <div className="mt-3">
-            <DateFilter value={datePreset} onChange={setDatePreset} />
+            <DateFilter value={datePreset} onChange={(preset, custom) => {
+              setDatePreset(preset);
+              if (custom) setCustomRange(custom);
+            }} />
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
