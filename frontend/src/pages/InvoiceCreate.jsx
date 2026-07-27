@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Printer, Save, ArrowLeft } from "lucide-react";
+import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail } from "lucide-react";
 
 const INVOICE_TYPES = [
   { key: "tax", label: "Tax Invoice" },
@@ -56,6 +56,7 @@ export default function InvoiceCreate() {
   useEffect(() => {
     if (isView) {
       http.get(`/billing/invoices/${id}`).then((r) => setInvoice(r.data)).catch(() => nav("/billing/invoices"));
+      http.get("/billing/customers").then((r) => setCustomers(r.data || [])).catch(() => {});
     } else {
       Promise.all([
         http.get("/billing/customers"),
@@ -145,23 +146,51 @@ export default function InvoiceCreate() {
   // ============ VIEW / PRINT MODE ============
   if (isView) {
     if (!invoice) return <div className="p-6">Loading...</div>;
+
+    let company = {};
+    try { company = JSON.parse(localStorage.getItem("am_company_info") || "{}"); } catch {}
+    const customer = customers.find((c) => c.id === invoice.customer_id);
+    const shareMsg = `Namaste ${invoice.customer_name || ""},\n\nAapka invoice ${invoice.invoice_number} ready hai:\nAmount: ${formatMoney(invoice.total, cur)}\n${invoice.balance_due > 0 ? "Balance Due: " + formatMoney(invoice.balance_due, cur) + "\n" : "Paid ✓\n"}\nDetails: ${window.location.origin}/billing/invoices/${invoice.id}/view\n\nDhanyavaad!\n${company.company_name || ""}`;
+    const shareWhatsApp = () => {
+      const phone = (customer?.phone || "").replace(/\D/g, "");
+      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(shareMsg)}` : `https://wa.me/?text=${encodeURIComponent(shareMsg)}`, "_blank");
+    };
+    const shareEmail = () => {
+      window.location.href = `mailto:${customer?.email || ""}?subject=${encodeURIComponent("Invoice " + invoice.invoice_number)}&body=${encodeURIComponent(shareMsg)}`;
+    };
+
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between print:hidden">
+        <div className="flex items-center justify-between print:hidden flex-wrap gap-2">
           <Button variant="outline" onClick={() => nav("/billing/invoices")}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
-          <Button onClick={() => window.print()} data-testid="print-invoice-btn"
-            className="bg-[#2A4F4F] hover:bg-[#1F3939] text-white">
-            <Printer className="w-4 h-4 mr-1" /> Print / PDF
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={shareWhatsApp} data-testid="share-whatsapp-btn"
+              className="bg-[#25D366] hover:bg-[#1DA851] text-white">
+              <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp
+            </Button>
+            <Button onClick={shareEmail} data-testid="share-email-btn" variant="outline" className="border-[#2A4F4F] text-[#2A4F4F]">
+              <Mail className="w-4 h-4 mr-1" /> Email
+            </Button>
+            <Button onClick={() => window.print()} data-testid="print-invoice-btn"
+              className="bg-[#2A4F4F] hover:bg-[#1F3939] text-white">
+              <Printer className="w-4 h-4 mr-1" /> Print / PDF
+            </Button>
+          </div>
         </div>
         <div className="bg-white p-8 border border-[#E7E5DF] rounded-xl max-w-3xl mx-auto print:border-0 print:shadow-none print:p-4"
           data-testid="invoice-view">
           <div className="flex justify-between items-start mb-6">
-            <div>
-              <h1 className="font-heading text-2xl font-bold text-[#1C1917]">{user?.name || "Apka Munim"}</h1>
-              <p className="text-xs text-[#78716C]">{user?.email}</p>
+            <div className="flex items-start gap-3">
+              {company.logo && <img src={company.logo} alt="logo" className="h-14 w-auto object-contain" />}
+              <div>
+                <h1 className="font-heading text-2xl font-bold text-[#1C1917]">{company.company_name || user?.name || "Apka Munim"}</h1>
+                {company.gstin && <p className="text-xs text-[#78716C]">GSTIN: {company.gstin}</p>}
+                {company.phone && <p className="text-xs text-[#78716C]">Ph: {company.phone}</p>}
+                {company.email && <p className="text-xs text-[#78716C]">{company.email}</p>}
+                {company.address && <p className="text-xs text-[#78716C] whitespace-pre-wrap max-w-xs">{company.address}</p>}
+              </div>
             </div>
             <div className="text-right">
               <div className="text-xs uppercase tracking-wider text-[#78716C]">{invoice.invoice_type} Invoice</div>
@@ -229,6 +258,17 @@ export default function InvoiceCreate() {
           )}
           {invoice.terms && (
             <div className="mt-2 text-xs text-[#78716C]"><strong>Terms:</strong> {invoice.terms}</div>
+          )}
+          {company.signature && (
+            <div className="mt-6 flex justify-end">
+              <div className="text-right">
+                <img src={company.signature} alt="signature" className="h-12 ml-auto object-contain" />
+                <div className="border-t border-[#1C1917] w-32 mt-1 pt-1 text-xs">Authorized Signature</div>
+              </div>
+            </div>
+          )}
+          {company.invoice_footer && (
+            <div className="mt-4 text-xs text-[#78716C] text-center">{company.invoice_footer}</div>
           )}
           <div className="mt-6 pt-4 border-t border-[#E7E5DF] text-center text-xs text-[#A8A29E]">
             Powered by Apka Munim · apkamunim.com

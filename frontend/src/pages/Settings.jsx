@@ -1,15 +1,126 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { http, API, ensureNotificationPermission } from "@/lib/api";
+import { useDashboardPrefs, WIDGET_DEFS } from "@/context/DashboardPrefsContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound } from "lucide-react";
+import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound, LayoutDashboard, Building2, PenTool, Camera } from "lucide-react";
 import { toast } from "sonner";
 import LoginActivitySection from "@/components/LoginActivitySection";
 import TwoFactorSection from "@/components/TwoFactorSection";
+
+function DashboardWidgetsSection({ Section }) {
+  const { widgets, setWidget, reset } = useDashboardPrefs();
+  return (
+    <Section icon={LayoutDashboard} title="Dashboard Widgets" desc="Kaunse widgets Dashboard pe dikhayen — apni marzi.">
+      <div className="space-y-2" data-testid="dashboard-widgets-settings">
+        {WIDGET_DEFS.map((w) => (
+          <label key={w.key}
+            className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-[#F9F8F6] ${w.locked ? "opacity-60 cursor-not-allowed" : ""}`}>
+            <input type="checkbox"
+              checked={!!widgets[w.key]}
+              disabled={w.locked}
+              onChange={(e) => setWidget(w.key, e.target.checked)}
+              data-testid={`widget-toggle-${w.key}`}
+              className="w-4 h-4 rounded accent-[#2A4F4F]" />
+            <span className="text-sm flex-1">{w.label}</span>
+            {w.locked && <span className="text-[10px] uppercase text-[#A8A29E]">Locked</span>}
+          </label>
+        ))}
+        <button onClick={reset} data-testid="widget-reset-btn"
+          className="mt-2 text-xs text-[#2A4F4F] hover:underline">Reset to default</button>
+      </div>
+    </Section>
+  );
+}
+
+function CompanyInfoSection({ Section }) {
+  const [info, setInfo] = useState({
+    company_name: "", gstin: "", phone: "", email: "", address: "",
+    logo: "", signature: "", invoice_footer: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("am_company_info");
+      if (raw) setInfo((s) => ({ ...s, ...JSON.parse(raw) }));
+    } catch {}
+  }, []);
+
+  const onFile = (key, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) { toast.error("File 1MB se kam honi chahiye"); return; }
+    const r = new FileReader();
+    r.onload = () => setInfo((s) => ({ ...s, [key]: r.result }));
+    r.readAsDataURL(file);
+  };
+
+  const save = () => {
+    setSaving(true);
+    try {
+      localStorage.setItem("am_company_info", JSON.stringify(info));
+      toast.success("Company info saved!");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Section icon={Building2} title="Company Info (for Invoices)" desc="Logo, GSTIN, signature — Invoice mein print honge.">
+      <div className="space-y-3" data-testid="company-info-settings">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><Label>Company Name</Label>
+            <Input value={info.company_name} onChange={(e) => setInfo({ ...info, company_name: e.target.value })}
+              data-testid="company-name-input" placeholder="ABC Traders" />
+          </div>
+          <div><Label>GSTIN</Label>
+            <Input value={info.gstin} onChange={(e) => setInfo({ ...info, gstin: e.target.value })}
+              placeholder="27AABCU9603R1ZM" />
+          </div>
+          <div><Label>Phone</Label>
+            <Input value={info.phone} onChange={(e) => setInfo({ ...info, phone: e.target.value })} />
+          </div>
+          <div><Label>Email</Label>
+            <Input value={info.email} onChange={(e) => setInfo({ ...info, email: e.target.value })} />
+          </div>
+        </div>
+        <div><Label>Address</Label>
+          <Textarea rows={2} value={info.address} onChange={(e) => setInfo({ ...info, address: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <Label>Company Logo</Label>
+            <label className="mt-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F2F0EA] hover:bg-[#E7E5DF] cursor-pointer text-sm">
+              <Camera className="w-4 h-4" /> {info.logo ? "Change" : "Upload"}
+              <input type="file" accept="image/*" hidden onChange={(e) => onFile("logo", e)} data-testid="logo-upload" />
+            </label>
+            {info.logo && <img src={info.logo} alt="logo" className="mt-2 h-14 object-contain rounded" />}
+          </div>
+          <div>
+            <Label>Digital Signature</Label>
+            <label className="mt-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F2F0EA] hover:bg-[#E7E5DF] cursor-pointer text-sm">
+              <PenTool className="w-4 h-4" /> {info.signature ? "Change" : "Upload"}
+              <input type="file" accept="image/*" hidden onChange={(e) => onFile("signature", e)} data-testid="signature-upload" />
+            </label>
+            {info.signature && <img src={info.signature} alt="signature" className="mt-2 h-14 object-contain rounded" />}
+          </div>
+        </div>
+        <div><Label>Invoice Footer (optional)</Label>
+          <Input value={info.invoice_footer} onChange={(e) => setInfo({ ...info, invoice_footer: e.target.value })}
+            placeholder="e.g. Bank details / Payment QR link" />
+        </div>
+        <Button onClick={save} disabled={saving} data-testid="save-company-info"
+          className="bg-[#2A4F4F] hover:bg-[#1F3939] text-white">
+          {saving ? "Saving..." : "Save Company Info"}
+        </Button>
+      </div>
+    </Section>
+  );
+}
 
 function PinSection() {
   const [pinStatus, setPinStatus] = React.useState(null);
@@ -220,6 +331,10 @@ export default function Settings() {
         </Section>
 
         <PinSection />
+
+        <DashboardWidgetsSection Section={Section} />
+
+        <CompanyInfoSection Section={Section} />
 
         <TwoFactorSection />
 

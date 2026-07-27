@@ -5,6 +5,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { PrivacyProvider } from "@/context/PrivacyContext";
+import { DashboardPrefsProvider } from "@/context/DashboardPrefsContext";
 import { Toaster } from "sonner";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -32,6 +33,7 @@ import Products from "@/pages/Products";
 import Parties from "@/pages/Parties";
 import Invoices from "@/pages/Invoices";
 import InvoiceCreate from "@/pages/InvoiceCreate";
+import BillingReports from "@/pages/BillingReports";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
@@ -69,6 +71,7 @@ function App() {
         <ThemeProvider>
           <AuthProvider>
             <PrivacyProvider>
+            <DashboardPrefsProvider>
             <Toaster position="top-right" richColors />
             <InstallPrompt />
             <Routes>
@@ -100,11 +103,13 @@ function App() {
             <Route path="/billing/invoices" element={<Protected><Invoices /></Protected>} />
             <Route path="/billing/invoices/new" element={<Protected><InvoiceCreate /></Protected>} />
             <Route path="/billing/invoices/:id/view" element={<Protected><InvoiceCreate /></Protected>} />
+            <Route path="/billing/reports" element={<Protected><BillingReports /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </DashboardPrefsProvider>
           </PrivacyProvider>
           </AuthProvider>
         </ThemeProvider>

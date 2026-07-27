@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { MoneyValue } from "@/context/PrivacyContext";
+import { useDashboardPrefs } from "@/context/DashboardPrefsContext";
 
 const Stat = ({ label, value, icon: Icon, tone, testid, to }) => {
   const toneMap = {
@@ -43,6 +44,7 @@ const Stat = ({ label, value, icon: Icon, tone, testid, to }) => {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { widgets } = useDashboardPrefs();
   const [summary, setSummary] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [recent, setRecent] = useState([]);
@@ -111,20 +113,24 @@ export default function Dashboard() {
       </div>
 
       {/* Vibe / Meme */}
-      <VibeCard />
+      {widgets.vibe && <VibeCard />}
 
       {/* Health + Streak + Net Worth */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2"><HealthScoreCard /></div>
-        <StreakCard />
-        <NetWorthCard />
-        <EmergencyFundCard />
-        <BadgesCard />
-      </div>
+      {(widgets.health || widgets.streak || widgets.networth || widgets.emergency || widgets.badges) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {widgets.health && <div className="lg:col-span-2"><HealthScoreCard /></div>}
+          {widgets.streak && <StreakCard />}
+          {widgets.networth && <NetWorthCard />}
+          {widgets.emergency && <EmergencyFundCard />}
+          {widgets.badges && <BadgesCard />}
+        </div>
+      )}
 
       {/* Accounts + Recent */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white border border-[#E7E5DF] rounded-xl p-6">
+      {(widgets.recent || widgets.accounts) && (
+      <div className={`grid gap-6 ${widgets.recent && widgets.accounts ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
+        {widgets.recent && (
+        <div className={`${widgets.accounts ? "lg:col-span-2" : ""} bg-white border border-[#E7E5DF] rounded-xl p-6`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-heading text-lg font-semibold text-[#1C1917]">Recent Transactions</h2>
             <Link to="/transactions" data-testid="dashboard-see-all-transactions"
@@ -165,7 +171,9 @@ export default function Dashboard() {
             </ul>
           )}
         </div>
+        )}
 
+        {widgets.accounts && (
         <div className="bg-white border border-[#E7E5DF] rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-heading text-lg font-semibold text-[#1C1917]">Accounts</h2>
@@ -194,7 +202,9 @@ export default function Dashboard() {
             </ul>
           )}
         </div>
+        )}
       </div>
+      )}
 
       <AddTransactionDialog open={openTxn} onOpenChange={setOpenTxn}
         accounts={accounts} onDone={load} />
