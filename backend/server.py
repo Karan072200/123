@@ -3408,6 +3408,331 @@ async def add_kid_entry(body: KidEntryIn, user=Depends(get_current_user)):
     return entry
 
 
+# ================================================================
+# ===== v14: BILLING MODULE
+# ================================================================
+
+class ProductIn(BaseModel):
+    name: str
+    sku: Optional[str] = None
+    hsn: Optional[str] = None
+    barcode: Optional[str] = None
+    category: Optional[str] = "General"
+    brand: Optional[str] = None
+    unit: Optional[str] = "PCS"
+    price: float = 0
+    mrp: Optional[float] = 0
+    purchase_price: Optional[float] = 0
+    gst_rate: float = 0
+    stock: float = 0
+    low_stock_alert: Optional[float] = 5
+    image: Optional[str] = None
+    active: bool = True
+
+
+class PartyIn(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    gstin: Optional[str] = None
+    address: Optional[str] = None
+    opening_balance: float = 0
+
+
+class InvoiceItemIn(BaseModel):
+    product_id: Optional[str] = None
+    name: str
+    hsn: Optional[str] = None
+    qty: float
+    unit: Optional[str] = "PCS"
+    price: float
+    discount_pct: Optional[float] = 0
+    gst_rate: Optional[float] = 0
+
+
+class InvoiceIn(BaseModel):
+    invoice_type: str = "tax"
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    items: List[InvoiceItemIn]
+    discount_amount: Optional[float] = 0
+    shipping: Optional[float] = 0
+    gst_mode: str = "exclusive"
+    payment_mode: Optional[str] = "cash"
+    account_id: Optional[str] = None
+    paid_amount: Optional[float] = None
+    notes: Optional[str] = None
+    terms: Optional[str] = None
+    invoice_date: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = "final"
+
+
+class PurchaseIn(BaseModel):
+    supplier_id: Optional[str] = None
+    supplier_name: Optional[str] = None
+    items: List[InvoiceItemIn]
+    discount_amount: Optional[float] = 0
+    shipping: Optional[float] = 0
+    gst_mode: str = "exclusive"
+    payment_mode: Optional[str] = "credit"
+    account_id: Optional[str] = None
+    paid_amount: Optional[float] = None
+    notes: Optional[str] = None
+    purchase_date: Optional[str] = None
+
+
+def _compute_invoice_totals(items, discount_amount, shipping, gst_mode):
+    subtotal = 0.0
+    taxable = 0.0
+    tax = 0.0
+    for it in items:
+        line = float(it.get("qty", 0)) * float(it.get("price", 0))
+        disc_pct = float(it.get("discount_pct") or 0)
+        line_after_disc = line * (1 - disc_pct / 100)
+        rate = float(it.get("gst_rate") or 0)
+        if gst_mode == "inclusive":
+            line_taxable = line_after_disc / (1 + rate / 100) if rate else line_after_disc
+            line_tax = line_after_disc - line_taxable
+        else:
+            line_taxable = line_after_disc
+            line_tax = line_after_disc * (rate / 100)
+        subtotal += line_after_disc
+        taxable += line_taxable
+        tax += line_tax
+        it["_line_total"] = round(line_taxable + line_tax, 2)
+    total = round(taxable + tax + float(shipping or 0) - float(discount_amount or 0), 2)
+    return {
+        "subtotal": round(subtotal, 2), "taxable": round(taxable, 2),
+        "tax": round(tax, 2), "shipping": float(shipping or 0),
+        "discount_amount": float(discount_amount or 0), "total": total,
+    }
+
+
+async def _next_invoice_number(owner_id, invoice_type):
+    prefix_map = {"tax": "INV", "gst": "GST", "proforma": "PRF", "quotation": "QTN", "challan": "CHL", "credit": "CN", "debit": "DN"}
+    prefix = prefix_map.get(invoice_type, "INV")
+    year = datetime.now(timezone.utc).strftime("%y")
+    last = await db.invoices.find_one(
+        {"owner_id": owner_id, "invoice_type": invoice_type},
+        sort=[("created_at", -1)]
+    )
+    seq = 1
+    if last and last.get("invoice_number"):
+        try:
+            seq = int(str(last["invoice_number"]).split("-")[-1]) + 1
+        except Exception:
+            seq = 1
+    return f"{prefix}-{year}-{seq:04d}"
+
+
+@api.get("/billing/products")
+async def list_products(user=Depends(get_current_user), q: str = ""):
+    query = {"owner_id": user["current_ledger_id"]}
+    if q:
+        import re
+        rx = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [{"name": rx}, {"sku": rx}, {"barcode": rx}, {"category": rx}]
+    return await db.products.find(query, {"_id": 0}).sort("name", 1).to_list(500)
+
+
+@api.post("/billing/products")
+async def create_product(body: ProductIn, user=Depends(get_current_user)):
+    pid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {"id": pid, "owner_id": user["current_ledger_id"], **body.dict(), "created_at": now}
+    await db.products.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/billing/products/{product_id}")
+async def update_product(product_id: str, body: ProductIn, user=Depends(get_current_user)):
+    await db.products.update_one(
+        {"id": product_id, "owner_id": user["current_ledger_id"]},
+        {"$set": body.dict()}
+    )
+    return {"ok": True}
+
+
+@api.delete("/billing/products/{product_id}")
+async def delete_product(product_id: str, user=Depends(get_current_user)):
+    await db.products.delete_one({"id": product_id, "owner_id": user["current_ledger_id"]})
+    return {"ok": True}
+
+
+async def _party_create(kind, body, user):
+    pid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": pid, "owner_id": user["current_ledger_id"], "kind": kind,
+        **body.dict(), "outstanding": float(body.opening_balance or 0),
+        "created_at": now,
+    }
+    await db.parties.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/billing/customers")
+async def list_customers(user=Depends(get_current_user)):
+    return await db.parties.find(
+        {"owner_id": user["current_ledger_id"], "kind": "customer"}, {"_id": 0}
+    ).sort("name", 1).to_list(500)
+
+
+@api.post("/billing/customers")
+async def add_customer(body: PartyIn, user=Depends(get_current_user)):
+    return await _party_create("customer", body, user)
+
+
+@api.get("/billing/suppliers")
+async def list_suppliers(user=Depends(get_current_user)):
+    return await db.parties.find(
+        {"owner_id": user["current_ledger_id"], "kind": "supplier"}, {"_id": 0}
+    ).sort("name", 1).to_list(500)
+
+
+@api.post("/billing/suppliers")
+async def add_supplier(body: PartyIn, user=Depends(get_current_user)):
+    return await _party_create("supplier", body, user)
+
+
+@api.patch("/billing/parties/{party_id}")
+async def update_party(party_id: str, body: PartyIn, user=Depends(get_current_user)):
+    await db.parties.update_one(
+        {"id": party_id, "owner_id": user["current_ledger_id"]},
+        {"$set": body.dict()}
+    )
+    return {"ok": True}
+
+
+@api.delete("/billing/parties/{party_id}")
+async def delete_party(party_id: str, user=Depends(get_current_user)):
+    await db.parties.delete_one({"id": party_id, "owner_id": user["current_ledger_id"]})
+    return {"ok": True}
+
+
+@api.get("/billing/invoices")
+async def list_invoices(user=Depends(get_current_user), status: Optional[str] = None):
+    q = {"owner_id": user["current_ledger_id"]}
+    if status:
+        q["status"] = status
+    return await db.invoices.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api.get("/billing/invoices/{invoice_id}")
+async def get_invoice(invoice_id: str, user=Depends(get_current_user)):
+    inv = await db.invoices.find_one({"id": invoice_id, "owner_id": user["current_ledger_id"]}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return inv
+
+
+@api.post("/billing/invoices")
+async def create_invoice(body: InvoiceIn, user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    inv_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    inv_no = await _next_invoice_number(owner, body.invoice_type)
+
+    items = [it.dict() for it in body.items]
+    totals = _compute_invoice_totals(items, body.discount_amount or 0, body.shipping or 0, body.gst_mode)
+
+    paid_amt = body.paid_amount if body.paid_amount is not None else totals["total"]
+    if body.payment_mode == "credit":
+        paid_amt = 0
+
+    doc = {
+        "id": inv_id, "owner_id": owner, "invoice_number": inv_no,
+        "invoice_type": body.invoice_type,
+        "customer_id": body.customer_id, "customer_name": body.customer_name,
+        "items": items, "gst_mode": body.gst_mode, **totals,
+        "paid_amount": float(paid_amt),
+        "balance_due": round(totals["total"] - float(paid_amt), 2),
+        "payment_mode": body.payment_mode, "account_id": body.account_id,
+        "notes": body.notes, "terms": body.terms,
+        "invoice_date": body.invoice_date or now, "due_date": body.due_date,
+        "status": body.status or "final", "created_at": now,
+    }
+    await db.invoices.insert_one(doc)
+
+    if body.invoice_type in ("tax", "gst") and doc["status"] == "final":
+        for it in items:
+            if it.get("product_id"):
+                await db.products.update_one(
+                    {"id": it["product_id"], "owner_id": owner},
+                    {"$inc": {"stock": -float(it.get("qty", 0))}}
+                )
+        if body.customer_id and doc["balance_due"] > 0:
+            await db.parties.update_one(
+                {"id": body.customer_id, "owner_id": owner},
+                {"$inc": {"outstanding": doc["balance_due"]}}
+            )
+        if body.account_id and float(paid_amt) > 0:
+            acc = await db.accounts.find_one({"id": body.account_id, "owner_id": owner})
+            if acc:
+                await db.accounts.update_one({"id": body.account_id}, {"$inc": {"balance": float(paid_amt)}})
+                await db.transactions.insert_one({
+                    "id": str(uuid.uuid4()), "owner_id": owner,
+                    "account_id": body.account_id, "account_name": acc.get("name"),
+                    "type": "income", "amount": float(paid_amt),
+                    "category": "Sales", "note": f"Invoice {inv_no}",
+                    "date": now, "created_at": now,
+                })
+
+    doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/billing/invoices/{invoice_id}")
+async def delete_invoice(invoice_id: str, user=Depends(get_current_user)):
+    await db.invoices.delete_one({"id": invoice_id, "owner_id": user["current_ledger_id"]})
+    return {"ok": True}
+
+
+@api.get("/billing/dashboard")
+async def billing_dashboard(user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    async def _sum(match):
+        pipe = [{"$match": match}, {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}}]
+        docs = await db.invoices.aggregate(pipe).to_list(1)
+        return {"total": (docs[0]["total"] if docs else 0), "count": (docs[0]["count"] if docs else 0)}
+
+    today_sales = await _sum({"owner_id": owner, "invoice_type": {"$in": ["tax", "gst"]}, "status": "final", "created_at": {"$gte": today_start}})
+    month_sales = await _sum({"owner_id": owner, "invoice_type": {"$in": ["tax", "gst"]}, "status": "final", "created_at": {"$gte": month_start}})
+
+    pending_pipe = [
+        {"$match": {"owner_id": owner, "balance_due": {"$gt": 0}, "status": "final"}},
+        {"$group": {"_id": None, "total": {"$sum": "$balance_due"}, "count": {"$sum": 1}}}
+    ]
+    pending_docs = await db.invoices.aggregate(pending_pipe).to_list(1)
+    pending = {"total": pending_docs[0]["total"] if pending_docs else 0, "count": pending_docs[0]["count"] if pending_docs else 0}
+
+    recent = await db.invoices.find({"owner_id": owner}, {"_id": 0}).sort("created_at", -1).to_list(8)
+
+    low_stock = await db.products.find(
+        {"owner_id": owner, "$expr": {"$lte": ["$stock", "$low_stock_alert"]}}, {"_id": 0}
+    ).limit(10).to_list(10)
+
+    total_products = await db.products.count_documents({"owner_id": owner})
+    total_customers = await db.parties.count_documents({"owner_id": owner, "kind": "customer"})
+
+    return {
+        "today_sales": today_sales,
+        "month_sales": month_sales,
+        "pending": pending,
+        "recent_invoices": recent,
+        "low_stock_items": low_stock,
+        "total_products": total_products,
+        "total_customers": total_customers,
+    }
+
+
 # ----- Health -----
 @api.get("/")
 async def root():

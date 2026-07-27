@@ -5,8 +5,10 @@ import { useTheme } from "@/context/ThemeContext";
 import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
   BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
-  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby,
+  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby, Receipt, Eye, EyeOff,
 } from "lucide-react";
+import { usePrivacy } from "@/context/PrivacyContext";
+import QuickAddFAB from "@/components/QuickAddFAB";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -22,6 +24,7 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight, testid: "nav-transactions" },
   { to: "/udhaar", label: "Udhaar", icon: Users, testid: "nav-udhaar" },
+  { to: "/billing", label: "Billing", icon: Receipt, testid: "nav-billing" },
   { to: "/splits", label: "Bill Splits", icon: Split, testid: "nav-splits" },
   { to: "/investments", label: "Investments", icon: LineChart, testid: "nav-investments" },
   { to: "/tax-estimator", label: "Tax Estimator", icon: Calculator, testid: "nav-tax" },
@@ -97,6 +100,7 @@ function LedgerSwitcher() {
 export default function Layout({ children }) {
   const { user, logout, setCurrency } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
+  const { hidden: privacyOn, toggle: togglePrivacy } = usePrivacy();
   const nav = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -130,14 +134,25 @@ export default function Layout({ children }) {
             </div>
             <span className="font-heading text-xl font-bold text-[#1C1917]">Apka Munim</span>
           </div>
-          <button
-            onClick={toggleTheme}
-            data-testid="theme-toggle-btn"
-            aria-label="Toggle theme"
-            className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
-          >
-            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={togglePrivacy}
+              data-testid="privacy-toggle-btn"
+              aria-label="Toggle privacy"
+              title={privacyOn ? "Show amounts" : "Hide amounts"}
+              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
+            >
+              {privacyOn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={toggleTheme}
+              data-testid="theme-toggle-btn"
+              aria-label="Toggle theme"
+              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
         <div className="mb-4">
@@ -211,6 +226,11 @@ export default function Layout({ children }) {
               className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
               <Search className="w-4 h-4" />
             </button>
+            <button onClick={togglePrivacy} data-testid="mobile-privacy-toggle"
+              aria-label="Toggle privacy"
+              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
+              {privacyOn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
             <button onClick={toggleTheme} data-testid="mobile-theme-toggle"
               className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
               {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -240,6 +260,7 @@ export default function Layout({ children }) {
         <div className="p-6 md:p-8 max-w-7xl mx-auto">{children}</div>
       </main>
       <ChatWidget />
+      <QuickAddFAB />
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );

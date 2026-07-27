@@ -14,23 +14,30 @@ import EmergencyFundCard from "@/components/EmergencyFundCard";
 import {
   TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { MoneyValue } from "@/context/PrivacyContext";
 
-const Stat = ({ label, value, icon: Icon, tone, testid }) => {
+const Stat = ({ label, value, icon: Icon, tone, testid, to }) => {
   const toneMap = {
     primary: "bg-[#2A4F4F] text-white",
     income: "bg-[#4A7C59]/10 text-[#3B6446] border border-[#4A7C59]/20",
     expense: "bg-[#D96C52]/10 text-[#B15039] border border-[#D96C52]/20",
     warn: "bg-[#E8B365]/15 text-[#8B6220] border border-[#E8B365]/25",
   };
+  const nav = useNavigate();
+  const Wrap = to ? "button" : "div";
   return (
-    <div data-testid={testid} className={`rounded-xl p-5 soft-rise ${toneMap[tone] || toneMap.primary}`}>
+    <Wrap data-testid={testid}
+      onClick={to ? () => nav(to) : undefined}
+      className={`rounded-xl p-5 soft-rise text-left w-full ${to ? "hover:scale-[1.02] transition-transform cursor-pointer" : ""} ${toneMap[tone] || toneMap.primary}`}>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold tracking-widest uppercase opacity-80">{label}</span>
         <Icon className="w-4 h-4 opacity-80" />
       </div>
-      <div className="font-heading text-2xl md:text-3xl font-bold">{value}</div>
-    </div>
+      <div className="font-heading text-2xl md:text-3xl font-bold">
+        <MoneyValue>{value}</MoneyValue>
+      </div>
+    </Wrap>
   );
 };
 
@@ -91,13 +98,13 @@ export default function Dashboard() {
 
       {/* Top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat testid="stat-balance" label="Total Balance" tone="primary" icon={Wallet}
+        <Stat testid="stat-balance" label="Total Balance" tone="primary" icon={Wallet} to="/accounts"
           value={summary ? formatMoney(summary.net_balance, cur) : "—"} />
-        <Stat testid="stat-income" label="Aaya (Income)" tone="income" icon={TrendingUp}
+        <Stat testid="stat-income" label="Aaya (Income)" tone="income" icon={TrendingUp} to="/transactions?type=income"
           value={summary ? formatMoney(summary.total_income, cur) : "—"} />
-        <Stat testid="stat-expense" label="Gaya (Kharcha)" tone="expense" icon={TrendingDown}
+        <Stat testid="stat-expense" label="Gaya (Kharcha)" tone="expense" icon={TrendingDown} to="/transactions?type=expense"
           value={summary ? formatMoney(summary.total_expense, cur) : "—"} />
-        <Stat testid="stat-udhaar" label="Udhaar Net" tone="warn" icon={Users}
+        <Stat testid="stat-udhaar" label="Udhaar Net" tone="warn" icon={Users} to="/udhaar"
           value={summary
             ? formatMoney((summary.udhaar_lene || 0) - (summary.udhaar_dene || 0), cur)
             : "—"} />

@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { PrivacyProvider } from "@/context/PrivacyContext";
 import { Toaster } from "sonner";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -26,6 +27,11 @@ import TaxEstimator from "@/pages/TaxEstimator";
 import WhatIf from "@/pages/WhatIf";
 import Warranties from "@/pages/Warranties";
 import KidsMoney from "@/pages/KidsMoney";
+import BillingDashboard from "@/pages/BillingDashboard";
+import Products from "@/pages/Products";
+import Parties from "@/pages/Parties";
+import Invoices from "@/pages/Invoices";
+import InvoiceCreate from "@/pages/InvoiceCreate";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import Layout from "@/components/Layout";
@@ -62,6 +68,7 @@ function App() {
       <BrowserRouter>
         <ThemeProvider>
           <AuthProvider>
+            <PrivacyProvider>
             <Toaster position="top-right" richColors />
             <InstallPrompt />
             <Routes>
@@ -86,11 +93,19 @@ function App() {
             <Route path="/what-if" element={<Protected><WhatIf /></Protected>} />
             <Route path="/warranties" element={<Protected><Warranties /></Protected>} />
             <Route path="/kids" element={<Protected><KidsMoney /></Protected>} />
+            <Route path="/billing" element={<Protected><BillingDashboard /></Protected>} />
+            <Route path="/billing/products" element={<Protected><Products /></Protected>} />
+            <Route path="/billing/customers" element={<Protected><Parties kind="customer" /></Protected>} />
+            <Route path="/billing/suppliers" element={<Protected><Parties kind="supplier" /></Protected>} />
+            <Route path="/billing/invoices" element={<Protected><Invoices /></Protected>} />
+            <Route path="/billing/invoices/new" element={<Protected><InvoiceCreate /></Protected>} />
+            <Route path="/billing/invoices/:id/view" element={<Protected><InvoiceCreate /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </PrivacyProvider>
           </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>

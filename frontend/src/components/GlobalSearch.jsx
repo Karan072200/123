@@ -37,12 +37,19 @@ import {
   FileUp,
   ShieldCheck,
   Baby,
+  Receipt,
+  Package,
 } from "lucide-react";
 
 // Static pages/features — always searchable client-side
 const FEATURES = [
   { label: "Dashboard", desc: "Overview, balance, streak, health score", to: "/dashboard", icon: LayoutDashboard, keywords: "home main balance streak health emergency fund" },
   { label: "Transactions", desc: "Aaya / Gaya list, add income/expense", to: "/transactions", icon: ArrowLeftRight, keywords: "income expense kharcha aaya gaya paise entry" },
+  { label: "Billing Dashboard", desc: "Sales, invoices, pending, low-stock", to: "/billing", icon: Receipt, keywords: "billing business sales gst tax invoice dukan" },
+  { label: "Invoices", desc: "Create, print, GST invoice, quotation", to: "/billing/invoices", icon: Receipt, keywords: "invoice bill gst tax quotation proforma challan credit debit note print pdf" },
+  { label: "Products", desc: "Inventory, HSN, GST rate, stock, barcode", to: "/billing/products", icon: Package, keywords: "product inventory item stock hsn gst barcode sku brand" },
+  { label: "Customers", desc: "Customer ledger + outstanding", to: "/billing/customers", icon: Users, keywords: "customer party client gstin ledger receivable" },
+  { label: "Suppliers", desc: "Supplier ledger + payables", to: "/billing/suppliers", icon: Users, keywords: "supplier vendor party purchase payable" },
   { label: "Udhaar Tracker", desc: "Kisse lene hai, kisko dene hai", to: "/udhaar", icon: Users, keywords: "loan lene dene borrow lend baaki" },
   { label: "Bill Splits", desc: "Splitwise-style expense sharing", to: "/splits", icon: Split, keywords: "split bill share dinner trip friends splitwise equal share" },
   { label: "Investments", desc: "Mutual Funds, Stocks, SIP, FD, RD tracker", to: "/investments", icon: LineChart, keywords: "investment mutual fund stock sip fd rd portfolio gain loss" },
