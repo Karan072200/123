@@ -26,7 +26,7 @@ export default function Parties({ kind = "customer" }) {
   const endpoint = isCustomer ? "/billing/customers" : "/billing/suppliers";
 
   const load = async () => { const { data } = await http.get(endpoint); setItems(data || []); };
-  useEffect(() => { load(); }, [kind]);
+  useEffect(() => { load(); }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     if (!form.name) { toast.error("Name zaroori hai"); return; }

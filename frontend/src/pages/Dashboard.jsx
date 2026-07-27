@@ -71,7 +71,7 @@ export default function Dashboard() {
     setRecent(t.slice(0, 6));
   };
 
-  useEffect(() => { load(); }, [datePreset]);
+  useEffect(() => { load(); }, [datePreset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-8">

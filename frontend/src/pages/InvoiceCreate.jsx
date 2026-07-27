@@ -93,7 +93,7 @@ export default function InvoiceCreate() {
         }).catch(() => nav("/billing/invoices"));
       }
     }
-  }, [id, isEdit, isView]);
+  }, [id, isEdit, isView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Auto-print if query has print=1

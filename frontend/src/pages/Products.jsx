@@ -35,7 +35,7 @@ export default function Products() {
     setItems(data || []);
   };
 
-  useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); }, [q]);
+  useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAdd = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
   const openEdit = (p) => {
