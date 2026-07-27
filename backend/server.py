@@ -3822,6 +3822,9 @@ async def root():
 
 app.include_router(api)
 
+from billing import billing_router
+app.include_router(billing_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
