@@ -6,15 +6,30 @@ import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { FileText, Plus, Trash2, Eye, Printer, Copy, Edit3 } from "lucide-react";
+import DateFilter, { computeRange } from "@/components/DateFilter";
 
 export default function Invoices() {
   const { user } = useAuth();
   const cur = user?.currency || "INR";
   const [items, setItems] = useState([]);
+  const [datePreset, setDatePreset] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const nav = useNavigate();
 
   const load = async () => { const { data } = await http.get("/billing/invoices"); setItems(data || []); };
   useEffect(() => { load(); }, []);
+
+  const filtered = React.useMemo(() => {
+    const range = computeRange(datePreset);
+    return (items || []).filter((inv) => {
+      if (typeFilter !== "all" && inv.invoice_type !== typeFilter) return false;
+      if (range.from) {
+        const d = new Date(inv.invoice_date).getTime();
+        if (d < new Date(range.from).getTime() || d > new Date(range.to).getTime()) return false;
+      }
+      return true;
+    });
+  }, [items, datePreset, typeFilter]);
 
   const remove = async (id) => {
     if (!window.confirm("Delete this invoice?")) return;
@@ -41,7 +56,24 @@ export default function Invoices() {
         </Button>
       </div>
 
-      {items.length === 0 ? (
+      <div className="flex flex-wrap items-center gap-3">
+        <DateFilter value={datePreset} onChange={setDatePreset} />
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+          data-testid="invoice-type-filter"
+          className="h-8 px-3 rounded-full text-xs border border-[#E7E5DF] bg-white">
+          <option value="all">Sab Type</option>
+          <option value="tax">Tax Invoice</option>
+          <option value="gst">GST Invoice</option>
+          <option value="proforma">Proforma</option>
+          <option value="quotation">Quotation</option>
+          <option value="challan">Delivery Challan</option>
+          <option value="credit">Credit Note</option>
+          <option value="debit">Debit Note</option>
+        </select>
+        <span className="text-xs text-[#78716C]">Showing {filtered.length} / {items.length}</span>
+      </div>
+
+      {filtered.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-[#E7E5DF] rounded-xl p-12 text-center">
           <FileText className="w-12 h-12 mx-auto text-[#A8A29E] mb-3" />
           <p className="text-[#78716C]">Koi invoice nahi. Naya banao.</p>
@@ -62,7 +94,7 @@ export default function Invoices() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E7E5DF]">
-                {items.map((inv) => (
+                {filtered.map((inv) => (
                   <tr key={inv.id} data-testid={`invoice-${inv.id}`} className="hover:bg-[#F9F8F6]">
                     <td className="p-3 font-mono font-medium">{inv.invoice_number}</td>
                     <td className="p-3 hidden sm:table-cell">{inv.customer_name || "Walk-in"}</td>

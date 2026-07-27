@@ -15,6 +15,8 @@ const INVOICE_TYPES = [
   { key: "proforma", label: "Proforma" },
   { key: "quotation", label: "Quotation" },
   { key: "challan", label: "Delivery Challan" },
+  { key: "credit", label: "Credit Note" },
+  { key: "debit", label: "Debit Note" },
 ];
 
 const PAYMENT_MODES = ["cash", "bank", "upi", "card", "wallet", "credit"];
