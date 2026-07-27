@@ -43,6 +43,31 @@ export default function BillingDashboard() {
         </Button>
       </div>
 
+      {/* Quick create buttons for all doc types */}
+      <div className="flex flex-wrap gap-2" data-testid="doc-type-shortcuts">
+        {[
+          { type: "tax", label: "Tax Invoice" },
+          { type: "gst", label: "GST Invoice" },
+          { type: "proforma", label: "Proforma" },
+          { type: "quotation", label: "Quotation" },
+          { type: "challan", label: "Delivery Challan" },
+          { type: "credit", label: "Credit Note", accent: true },
+          { type: "debit", label: "Debit Note", accent: true },
+        ].map((d) => (
+          <button key={d.type}
+            onClick={() => nav(`/billing/invoices/new?type=${d.type}`)}
+            data-testid={`quick-${d.type}-btn`}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              d.accent
+                ? "bg-[#B8763A] text-white border-[#B8763A] hover:bg-[#996322]"
+                : "bg-white text-[#57534E] border-[#E7E5DF] hover:bg-[#F2F0EA]"
+            }`}
+          >
+            + {d.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {cards.map((c) => {
           const Icon = c.icon;

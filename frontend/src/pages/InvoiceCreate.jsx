@@ -42,7 +42,7 @@ export default function InvoiceCreate() {
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
-    invoice_type: "tax",
+    invoice_type: sp.get("type") || "tax",
     customer_id: "",
     customer_name: "Walk-in Customer",
     items: [emptyItem()],

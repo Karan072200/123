@@ -8,6 +8,8 @@ const ITEMS = [
   { label: "Transfer", icon: ArrowLeftRight, to: "/accounts?transfer=1", color: "bg-[#2A4F4F]" },
   { label: "Udhaar", icon: Users, to: "/udhaar?add=1", color: "bg-[#B8763A]" },
   { label: "Invoice", icon: FileText, to: "/billing/invoices/new", color: "bg-[#1F3B3B]" },
+  { label: "Credit Note", icon: FileText, to: "/billing/invoices/new?type=credit", color: "bg-[#996322]" },
+  { label: "Debit Note", icon: FileText, to: "/billing/invoices/new?type=debit", color: "bg-[#B15039]" },
   { label: "Purchase", icon: ShoppingCart, to: "/billing/purchases?add=1", color: "bg-[#57534E]" },
   { label: "Product", icon: Package, to: "/billing/products?add=1", color: "bg-[#4A7C59]" },
 ];
