@@ -7,11 +7,16 @@
 
 /* ========= PRINT: sirf Invoice hi print ho ========= */
 @media print {
-  @page { margin: 12mm; size: auto; }
+  @page { margin: 10mm; size: A4 portrait; }
 
   html, body {
     background: #fff !important;
     color: #000 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Sab kuch hide karo by default */
@@ -21,14 +26,33 @@
   [data-testid="invoice-view"],
   [data-testid="invoice-view"] * { visibility: visible !important; }
 
-  /* Invoice ko top pe fix karo full width */
+  /* Invoice ko top pe fix karo — A4 fit ke liye */
   [data-testid="invoice-view"] {
     position: absolute !important;
     left: 0 !important; top: 0 !important;
-    width: 100% !important; max-width: 100% !important;
-    margin: 0 !important; padding: 0 !important;
-    box-shadow: none !important; border: none !important;
+    right: 0 !important;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 8mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    font-size: 11pt !important;
+    box-sizing: border-box !important;
   }
+
+  [data-testid="invoice-view"] table {
+    width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+  }
+  [data-testid="invoice-view"] table th,
+  [data-testid="invoice-view"] table td {
+    padding: 4pt 6pt !important;
+    word-break: break-word !important;
+  }
+  [data-testid="invoice-view"] h1 { font-size: 16pt !important; }
+  [data-testid="invoice-view"] img { max-height: 40mm !important; object-fit: contain !important; }
 
   /* Sidebar, FAB, ChatWidget, TopBars — hide */
   aside, nav, [data-testid="quick-add-fab"],
@@ -38,6 +62,9 @@
   [data-testid="mobile-global-search-trigger"] {
     display: none !important;
   }
+
+  /* Prevent page overflow */
+  * { overflow: visible !important; }
 }
 
 body {
