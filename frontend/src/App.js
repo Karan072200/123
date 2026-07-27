@@ -25,6 +25,9 @@ import Investments from "@/pages/Investments";
 import TaxEstimator from "@/pages/TaxEstimator";
 import WhatIf from "@/pages/WhatIf";
 import Warranties from "@/pages/Warranties";
+import Products from "@/pages/Products";
+import Purchases from "@/pages/Purchases";
+import Invoices from "@/pages/Invoices";
 import KidsMoney from "@/pages/KidsMoney";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -85,6 +88,9 @@ function App() {
             <Route path="/tax-estimator" element={<Protected><TaxEstimator /></Protected>} />
             <Route path="/what-if" element={<Protected><WhatIf /></Protected>} />
             <Route path="/warranties" element={<Protected><Warranties /></Protected>} />
+            <Route path="/billing/products" element={<Protected><Products /></Protected>} />
+            <Route path="/billing/purchases" element={<Protected><Purchases /></Protected>} />
+            <Route path="/billing/invoices" element={<Protected><Invoices /></Protected>} />
             <Route path="/kids" element={<Protected><KidsMoney /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
