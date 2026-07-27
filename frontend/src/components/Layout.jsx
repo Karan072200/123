@@ -6,6 +6,7 @@ import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
   BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
   Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby,
+  Package, Truck, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +29,9 @@ const navItems = [
   { to: "/what-if", label: "What-If Sim", icon: Sparkles, testid: "nav-whatif" },
   { to: "/warranties", label: "Warranty Vault", icon: ShieldCheck, testid: "nav-warranties" },
   { to: "/kids", label: "Kids Money", icon: Baby, testid: "nav-kids" },
+  { to: "/billing/products", label: "Products", icon: Package, testid: "nav-products" },
+  { to: "/billing/purchases", label: "Purchases", icon: Truck, testid: "nav-purchases" },
+  { to: "/billing/invoices", label: "Invoices", icon: FileText, testid: "nav-invoices" },
   { to: "/accounts", label: "Accounts", icon: Landmark, testid: "nav-accounts" },
   { to: "/recurring", label: "Recurring", icon: Repeat, testid: "nav-recurring" },
   { to: "/budgets", label: "Budgets", icon: Target, testid: "nav-budgets" },
