@@ -1,4 +1,5 @@
 import React from "react";
+// v15.0.1 - production alias sync fix (Feb 2026)
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
