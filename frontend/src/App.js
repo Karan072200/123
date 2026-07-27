@@ -103,6 +103,7 @@ function App() {
             <Route path="/billing/invoices" element={<Protected><Invoices /></Protected>} />
             <Route path="/billing/invoices/new" element={<Protected><InvoiceCreate /></Protected>} />
             <Route path="/billing/invoices/:id/view" element={<Protected><InvoiceCreate /></Protected>} />
+            <Route path="/billing/invoices/:id/edit" element={<Protected><InvoiceCreate /></Protected>} />
             <Route path="/billing/reports" element={<Protected><BillingReports /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />

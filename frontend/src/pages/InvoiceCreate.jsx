@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { http, formatMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail } from "lucide-react";
+import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail, Edit3 } from "lucide-react";
 
 const INVOICE_TYPES = [
   { key: "tax", label: "Tax Invoice" },
@@ -26,7 +26,9 @@ function emptyItem() {
 export default function InvoiceCreate() {
   const { id } = useParams();
   const [sp] = useSearchParams();
-  const isView = !!id;
+  const location = useLocation();
+  const isEdit = !!id && location.pathname.endsWith("/edit");
+  const isView = !!id && !isEdit;
   const nav = useNavigate();
   const { user } = useAuth();
   const cur = user?.currency || "INR";
@@ -66,10 +68,30 @@ export default function InvoiceCreate() {
         setCustomers(c.data || []);
         setProducts(p.data || []);
         setAccounts(a.data || []);
-        if (a.data?.[0]) setForm((f) => ({ ...f, account_id: a.data[0].id }));
+        if (!isEdit && a.data?.[0]) setForm((f) => ({ ...f, account_id: a.data[0].id }));
       });
+      if (isEdit) {
+        http.get(`/billing/invoices/${id}`).then((r) => {
+          const inv = r.data;
+          setForm({
+            invoice_type: inv.invoice_type || "tax",
+            customer_id: inv.customer_id || "",
+            customer_name: inv.customer_name || "Walk-in Customer",
+            items: inv.items?.length ? inv.items : [emptyItem()],
+            discount_amount: inv.discount_amount || 0,
+            shipping: inv.shipping || 0,
+            gst_mode: inv.gst_mode || "exclusive",
+            payment_mode: inv.payment_mode || "cash",
+            account_id: inv.account_id || "",
+            paid_amount: inv.paid_amount ?? null,
+            notes: inv.notes || "",
+            terms: inv.terms || "",
+            invoice_date: inv.invoice_date ? new Date(inv.invoice_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+          });
+        }).catch(() => nav("/billing/invoices"));
+      }
     }
-  }, [id]);
+  }, [id, isEdit, isView]);
 
   useEffect(() => {
     // Auto-print if query has print=1
@@ -135,8 +157,10 @@ export default function InvoiceCreate() {
         status: "final",
         invoice_date: new Date(form.invoice_date).toISOString(),
       };
-      const { data } = await http.post("/billing/invoices", payload);
-      toast.success(`Invoice ${data.invoice_number} saved!`);
+      const { data } = isEdit
+        ? await http.patch(`/billing/invoices/${id}`, payload)
+        : await http.post("/billing/invoices", payload);
+      toast.success(`Invoice ${data.invoice_number} ${isEdit ? "updated" : "saved"}!`);
       nav(`/billing/invoices/${data.id}/view`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Save failed");
@@ -166,6 +190,10 @@ export default function InvoiceCreate() {
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
           <div className="flex gap-2 flex-wrap">
+            <Button onClick={() => nav(`/billing/invoices/${invoice.id}/edit`)} data-testid="edit-invoice-btn"
+              variant="outline" className="border-[#B8763A] text-[#B8763A] hover:bg-[#E8B365]/10">
+              <Edit3 className="w-4 h-4 mr-1" /> Edit
+            </Button>
             <Button onClick={shareWhatsApp} data-testid="share-whatsapp-btn"
               className="bg-[#25D366] hover:bg-[#1DA851] text-white">
               <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp
@@ -283,11 +311,11 @@ export default function InvoiceCreate() {
     <div className="space-y-4" data-testid="invoice-create-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-heading text-2xl md:text-3xl font-bold flex items-center gap-2">
-          <FileText className="w-6 h-6 text-[#2A4F4F]" /> Naya Invoice
+          <FileText className="w-6 h-6 text-[#2A4F4F]" /> {isEdit ? "Invoice Edit" : "Naya Invoice"}
         </h1>
         <Button onClick={save} disabled={saving} data-testid="invoice-save-btn"
           className="bg-[#2A4F4F] hover:bg-[#1F3939] text-white">
-          <Save className="w-4 h-4 mr-1" /> {saving ? "Saving..." : "Save Invoice"}
+          <Save className="w-4 h-4 mr-1" /> {saving ? "Saving..." : (isEdit ? "Update Invoice" : "Save Invoice")}
         </Button>
       </div>
 

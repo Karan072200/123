@@ -3685,6 +3685,87 @@ async def create_invoice(body: InvoiceIn, user=Depends(get_current_user)):
     return doc
 
 
+@api.patch("/billing/invoices/{invoice_id}")
+async def update_invoice(invoice_id: str, body: InvoiceIn, user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    old = await db.invoices.find_one({"id": invoice_id, "owner_id": owner})
+    if not old:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Reverse old effects if it was a real sales invoice
+    if old.get("invoice_type") in ("tax", "gst") and old.get("status") == "final":
+        for it in old.get("items", []):
+            if it.get("product_id"):
+                await db.products.update_one(
+                    {"id": it["product_id"], "owner_id": owner},
+                    {"$inc": {"stock": float(it.get("qty", 0))}}
+                )
+        if old.get("customer_id") and old.get("balance_due", 0) > 0:
+            await db.parties.update_one(
+                {"id": old["customer_id"], "owner_id": owner},
+                {"$inc": {"outstanding": -float(old["balance_due"])}}
+            )
+        if old.get("account_id") and old.get("paid_amount", 0) > 0:
+            await db.accounts.update_one(
+                {"id": old["account_id"], "owner_id": owner},
+                {"$inc": {"balance": -float(old["paid_amount"])}}
+            )
+        # Delete linked transaction record if exists
+        await db.transactions.delete_many({
+            "owner_id": owner, "note": f"Invoice {old.get('invoice_number')}"
+        })
+
+    # Compute new totals
+    items = [it.dict() for it in body.items]
+    totals = _compute_invoice_totals(items, body.discount_amount or 0, body.shipping or 0, body.gst_mode)
+    paid_amt = body.paid_amount if body.paid_amount is not None else totals["total"]
+    if body.payment_mode == "credit":
+        paid_amt = 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "invoice_type": body.invoice_type,
+        "customer_id": body.customer_id, "customer_name": body.customer_name,
+        "items": items, "gst_mode": body.gst_mode, **totals,
+        "paid_amount": float(paid_amt),
+        "balance_due": round(totals["total"] - float(paid_amt), 2),
+        "payment_mode": body.payment_mode, "account_id": body.account_id,
+        "notes": body.notes, "terms": body.terms,
+        "invoice_date": body.invoice_date or old.get("invoice_date"),
+        "due_date": body.due_date, "status": body.status or old.get("status", "final"),
+        "updated_at": now,
+    }
+    await db.invoices.update_one({"id": invoice_id}, {"$set": updates})
+
+    # Re-apply business logic
+    if updates["invoice_type"] in ("tax", "gst") and updates["status"] == "final":
+        for it in items:
+            if it.get("product_id"):
+                await db.products.update_one(
+                    {"id": it["product_id"], "owner_id": owner},
+                    {"$inc": {"stock": -float(it.get("qty", 0))}}
+                )
+        if body.customer_id and updates["balance_due"] > 0:
+            await db.parties.update_one(
+                {"id": body.customer_id, "owner_id": owner},
+                {"$inc": {"outstanding": updates["balance_due"]}}
+            )
+        if body.account_id and float(paid_amt) > 0:
+            acc = await db.accounts.find_one({"id": body.account_id, "owner_id": owner})
+            if acc:
+                await db.accounts.update_one({"id": body.account_id}, {"$inc": {"balance": float(paid_amt)}})
+                await db.transactions.insert_one({
+                    "id": str(uuid.uuid4()), "owner_id": owner,
+                    "account_id": body.account_id, "account_name": acc.get("name"),
+                    "type": "income", "amount": float(paid_amt),
+                    "category": "Sales", "note": f"Invoice {old.get('invoice_number')}",
+                    "date": now, "created_at": now,
+                })
+
+    updated = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    return updated
+
+
 @api.delete("/billing/invoices/{invoice_id}")
 async def delete_invoice(invoice_id: str, user=Depends(get_current_user)):
     await db.invoices.delete_one({"id": invoice_id, "owner_id": user["current_ledger_id"]})

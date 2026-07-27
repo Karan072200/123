@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Eye, Printer, Copy } from "lucide-react";
+import { FileText, Plus, Trash2, Eye, Printer, Copy, Edit3 } from "lucide-react";
 
 export default function Invoices() {
   const { user } = useAuth();
@@ -80,6 +80,7 @@ export default function Invoices() {
                     </td>
                     <td className="p-3 text-right whitespace-nowrap">
                       <button onClick={() => view(inv.id)} data-testid={`view-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="View"><Eye className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => nav(`/billing/invoices/${inv.id}/edit`)} data-testid={`edit-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
                       <button onClick={() => printInv(inv.id)} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Print"><Printer className="w-3.5 h-3.5" /></button>
                       <button onClick={() => remove(inv.id)} className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
                     </td>
