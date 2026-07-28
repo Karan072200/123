@@ -9,7 +9,7 @@ const REMINDER_KEY = "am_trial_reminder_last_shown";
 export const PremiumProvider = ({ children }) => {
   const { user } = useAuth();
   const [status, setStatus] = useState(null); // null = unknown/loading
-  const [plans, setPlans] = useState([]);
+  const [plans, setPlans] = useState([]); 
   const [lockedFeature, setLockedFeature] = useState(null); // string|null
   const [showReminder, setShowReminder] = useState(false);
 
