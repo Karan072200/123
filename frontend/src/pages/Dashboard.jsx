@@ -18,6 +18,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { MoneyValue } from "@/context/PrivacyContext";
 import { useDashboardPrefs } from "@/context/DashboardPrefsContext";
 import DateFilter, { computeRange } from "@/components/DateFilter";
+import AdSlot from "@/components/AdSlot";
 
 const Stat = ({ label, value, icon: Icon, tone, testid, to }) => {
   const toneMap = {
@@ -75,6 +76,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      <AdSlot />
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="text-xs font-semibold tracking-widest uppercase text-[#A8A29E]">
