@@ -9,11 +9,13 @@ import {
 } from "recharts";
 import { Sparkles, Loader2, FileText, FileSpreadsheet, Download } from "lucide-react";
 import { toast } from "sonner";
+import { usePremium } from "@/context/PremiumContext";
 
 const CHART_COLORS = ["#4A7C59", "#D96C52", "#E8B365", "#2A4F4F", "#7A6C5D", "#3B6446", "#B15039", "#8B6220"];
 
 export default function Reports() {
   const { user } = useAuth();
+  const { openLocked } = usePremium();
   const cur = user?.currency || "INR";
   const [summary, setSummary] = useState(null);
   const [monthly, setMonthly] = useState([]);
@@ -33,11 +35,16 @@ export default function Reports() {
 
   useEffect(() => { load(); }, []);
 
+  const isPremiumRequired = (e) => e?.response?.status === 402 && e?.response?.data?.detail?.code === "PREMIUM_REQUIRED";
+
   const getAi = async () => {
     setLoadingAi(true);
     try {
       const { data } = await http.post("/ai/insights");
       setAi(data);
+    } catch (e) {
+      if (isPremiumRequired(e)) openLocked("Advanced Reports");
+      else toast.error("Insights nahi mil paaye");
     } finally { setLoadingAi(false); }
   };
 
@@ -45,20 +52,23 @@ export default function Reports() {
     setExporting(format);
     try {
       const res = await http.get(`/export/${format}?month=${exportMonth}`, { responseType: "blob" });
-      const blob = new Blob([res.data], {
-        type: format === "pdf" ? "application/pdf" : "text/csv",
-      });
+      const mime = format === "pdf" ? "application/pdf"
+        : format === "excel" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "text/csv";
+      const ext = format === "excel" ? "xlsx" : format;
+      const blob = new Blob([res.data], { type: mime });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `paisabook-${exportMonth}.${format}`;
+      a.download = `apka-munim-${exportMonth}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
       toast.success(`${format.toUpperCase()} download ho gaya`);
     } catch (e) {
-      toast.error(`Export nahi hua: ${e?.message || "unknown error"}`);
+      if (isPremiumRequired(e)) openLocked(format === "excel" ? "Excel Export" : "Unlimited PDF Export");
+      else toast.error(`Export nahi hua: ${e?.message || "unknown error"}`);
     } finally {
       setExporting(null);
     }
@@ -95,6 +105,14 @@ export default function Reports() {
                 ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                 : <FileSpreadsheet className="w-4 h-4 mr-1" />}
               CSV
+            </Button>
+            <Button variant="outline" onClick={() => doExport("excel")} disabled={exporting !== null}
+              data-testid="export-excel-btn"
+              className="border-[#E7E5DF] rounded-full">
+              {exporting === "excel"
+                ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                : <FileSpreadsheet className="w-4 h-4 mr-1" />}
+              Excel
             </Button>
             <Button onClick={() => doExport("pdf")} disabled={exporting !== null}
               data-testid="export-pdf-btn"
