@@ -3,12 +3,13 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { http, API, ensureNotificationPermission } from "@/lib/api";
 import { useDashboardPrefs, WIDGET_DEFS } from "@/context/DashboardPrefsContext";
+import { usePremium } from "@/context/PremiumContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound, LayoutDashboard, Building2, PenTool, Camera } from "lucide-react";
+import { Download, Bell, Trash2, AlertTriangle, FileText, Shield, KeyRound, LayoutDashboard, Building2, PenTool, Camera, Crown, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import LoginActivitySection from "@/components/LoginActivitySection";
 import TwoFactorSection from "@/components/TwoFactorSection";
@@ -37,6 +38,82 @@ function DashboardWidgetsSection({ Section }) {
     </Section>
   );
 }
+
+function PremiumSection({ Section }) {
+  const { status, refresh, restore } = usePremium();
+  const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const doRestore = async () => {
+    setRestoring(true);
+    try {
+      await restore();
+      toast.success("Plan status refreshed");
+    } catch {
+      toast.error("Restore nahi ho paya");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const planLabel =
+    status?.status === "premium" ? (status.plan ? status.plan.replace("_", " ") : "Premium")
+    : status?.status === "trial" ? "Free Trial"
+    : "Free Plan";
+
+  const expiry = status?.status === "premium" ? status.subscription_end : status?.trial_end;
+
+  return (
+    <Section icon={Crown} title="Premium Membership" desc="Plan, trial aur subscription manage karo.">
+      <div className="space-y-3" data-testid="settings-premium-section">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-[#78716C]">Current Plan</span>
+          <span className="font-semibold text-[#1C1917] capitalize" data-testid="settings-current-plan">{planLabel}</span>
+        </div>
+        {status?.status === "trial" && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[#78716C]">Trial Remaining Days</span>
+            <span className="font-semibold text-[#1C1917]" data-testid="settings-trial-days-left">
+              {status.trial_days_left} day{status.trial_days_left === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
+        {expiry && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[#78716C]">{status?.status === "premium" ? "Subscription Expiry" : "Trial Expiry"}</span>
+            <span className="font-semibold text-[#1C1917]" data-testid="settings-expiry">
+              {new Date(expiry).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+          </div>
+        )}
+        {status?.plan === "lifetime" && (
+          <div className="text-xs text-[#4A7C59]">✓ Lifetime Premium — never expires</div>
+        )}
+
+        <div className="flex flex-col gap-2 pt-1">
+          <Link to="/premium" data-testid="settings-upgrade-link">
+            <Button className="w-full bg-[#D96C52] hover:bg-[#c25a41] text-white rounded-full">
+              <Crown className="w-3.5 h-3.5 mr-1" />
+              {status?.status === "premium" ? "Manage Subscription" : "Upgrade to Premium"}
+            </Button>
+          </Link>
+          <Button
+            variant="outline"
+            onClick={doRestore}
+            disabled={restoring}
+            data-testid="settings-restore-btn"
+            className="w-full border-[#E7E5DF] rounded-full"
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            {restoring ? "Restoring…" : "Restore Purchase"}
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 
 function CompanyInfoSection({ Section }) {
   const [info, setInfo] = useState({
@@ -308,6 +385,8 @@ export default function Settings() {
           <div className="text-sm text-[#78716C]">{user?.email}</div>
           <div className="text-xs text-[#78716C] mt-2">Currency: {user?.currency}</div>
         </div>
+
+        <PremiumSection Section={Section} />
 
         <Section icon={Bell} title="Notifications" desc="Budget cross ho toh alert milega.">
           <div className="text-xs text-[#57534E] mb-2">
