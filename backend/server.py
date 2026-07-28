@@ -64,6 +64,27 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-5-20250929")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+# ----- Premium / Monetization Config -----
+TRIAL_DAYS = 90
+TRIAL_REMINDER_DAYS_BEFORE = 7
+MAX_ADS_PER_DAY = 3
+FREE_AI_CHAT_DAILY_LIMIT = 5
+FREE_AI_INSIGHTS_DAILY_LIMIT = 1
+FREE_PDF_EXPORT_DAILY_LIMIT = 2
+
+PREMIUM_PLANS = {
+    "monthly": {"id": "monthly", "label": "Monthly", "price": 99, "duration_days": 30},
+    "half_yearly": {"id": "half_yearly", "label": "6 Months", "price": 499, "duration_days": 182},
+    "yearly": {"id": "yearly", "label": "1 Year", "price": 999, "duration_days": 365},
+    "two_yearly": {"id": "two_yearly", "label": "2 Years", "price": 1900, "duration_days": 730},
+    "lifetime": {"id": "lifetime", "label": "Lifetime", "price": 2999, "duration_days": None},
+}
+PREMIUM_FEATURE_LIST = [
+    "Unlimited AI Assistant", "Unlimited PDF Export", "Advanced Reports",
+    "Business Analytics", "Unlimited Backup & Restore", "Excel Export",
+    "Cloud Sync", "Advanced Search", "Ad-Free Experience", "Priority Support",
+]
+
 mongo_url = os.environ["MONGO_URL"].strip().strip('"').strip("'")
 if not (mongo_url.startswith("mongodb://") or mongo_url.startswith("mongodb+srv://")):
     raise RuntimeError(
@@ -235,6 +256,119 @@ async def get_current_user(request: Request) -> dict:
 def scope(user: dict) -> dict:
     """MongoDB filter to scope by user's active ledger."""
     return {"owner_id": user["current_ledger_id"]}
+
+
+# ----- Premium / Monetization helpers -----
+def _parse_dt(value) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        dt = dateutil_parser.isoparse(value)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+async def _sync_premium_status(user: dict) -> dict:
+    """
+    Recomputes the user's trial/subscription state against 'now' and persists
+    any transition (trial -> free, subscription -> free) or backfill for
+    accounts created before this system existed. Cheap and idempotent — safe
+    to call on every request; only writes to the DB when something changed.
+    """
+    now = datetime.now(timezone.utc)
+    updates = {}
+
+    if not user.get("trialStart"):
+        created = _parse_dt(user.get("created_at")) or now
+        trial_end = created + timedelta(days=TRIAL_DAYS)
+        updates.update({
+            "registrationDate": user.get("registrationDate") or created.isoformat(),
+            "trialStart": created.isoformat(),
+            "trialEnd": trial_end.isoformat(),
+            "subscriptionStatus": user.get("subscriptionStatus") or "trial",
+            "subscriptionPlan": user.get("subscriptionPlan"),
+            "subscriptionStart": user.get("subscriptionStart"),
+            "subscriptionEnd": user.get("subscriptionEnd"),
+            "premiumActive": True,
+            "adsShownToday": user.get("adsShownToday", 0),
+            "lastAdResetDate": user.get("lastAdResetDate") or now.date().isoformat(),
+        })
+        user = {**user, **updates}
+
+    status = user.get("subscriptionStatus", "trial")
+    plan = user.get("subscriptionPlan")
+    sub_end = _parse_dt(user.get("subscriptionEnd"))
+    trial_end = _parse_dt(user.get("trialEnd"))
+
+    if status == "premium" and plan == "lifetime":
+        premium_active = True
+    elif status == "premium":
+        if sub_end and now > sub_end:
+            status, premium_active = "free", False
+            updates["subscriptionStatus"] = "free"
+            updates["premiumActive"] = False
+        else:
+            premium_active = True
+    elif status == "trial":
+        if trial_end and now > trial_end:
+            status, premium_active = "free", False
+            updates["subscriptionStatus"] = "free"
+            updates["premiumActive"] = False
+        else:
+            premium_active = True
+    else:
+        status, premium_active = "free", False
+
+    if updates:
+        await db.users.update_one({"id": user["id"]}, {"$set": {**updates, "updatedAt": now.isoformat()}})
+
+    trial_days_left = max(0, (trial_end.date() - now.date()).days) if trial_end else 0
+
+    return {
+        "status": status,  # trial | premium | free
+        "premium_active": premium_active,
+        "plan": plan,
+        "registration_date": user.get("registrationDate"),
+        "trial_start": user.get("trialStart"),
+        "trial_end": user.get("trialEnd"),
+        "trial_days_left": trial_days_left if status == "trial" else 0,
+        "subscription_start": user.get("subscriptionStart"),
+        "subscription_end": user.get("subscriptionEnd"),
+        "show_trial_reminder": status == "trial" and trial_days_left <= TRIAL_REMINDER_DAYS_BEFORE,
+        "max_ads_per_day": MAX_ADS_PER_DAY,
+    }
+
+
+async def require_premium(user=Depends(get_current_user)) -> dict:
+    """Dependency for endpoints that are entirely Premium-only (e.g. cloud backup)."""
+    pstatus = await _sync_premium_status(user)
+    if not pstatus["premium_active"]:
+        raise HTTPException(status_code=402, detail={
+            "code": "PREMIUM_REQUIRED",
+            "message": "This feature is available only for Premium Members.",
+        })
+    return user
+
+
+async def _check_daily_free_limit(user: dict, field: str, limit: int) -> bool:
+    """
+    True if a free-tier user is still under their daily limit for `field`
+    (and increments the counter). Resets automatically on a new UTC day.
+    Only call this after confirming the user is NOT premium_active.
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+    reset_field = f"{field}ResetDate"
+    count = user.get(field, 0) if user.get(reset_field) == today else 0
+    if count >= limit:
+        return False
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {field: count + 1, reset_field: today}},
+    )
+    return True
 
 
 # ----- Models -----
@@ -450,6 +584,7 @@ async def register(request: Request, body: RegisterIn, response: Response):
             referred_by = referrer["referral_code"]
             await db.users.update_one({"id": referrer["id"]}, {"$inc": {"referral_credits": 50}})
 
+    trial_end_iso = (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).isoformat()
     await db.users.insert_one({
         "id": uid,
         "email": email,
@@ -460,6 +595,18 @@ async def register(request: Request, body: RegisterIn, response: Response):
         "current_ledger_id": personal_id,
         "referred_by": referred_by,
         "created_at": now,
+        # ----- Monetization: 90-day Premium trial starts at registration -----
+        "registrationDate": now,
+        "trialStart": now,
+        "trialEnd": trial_end_iso,
+        "subscriptionStatus": "trial",
+        "subscriptionPlan": None,
+        "subscriptionStart": None,
+        "subscriptionEnd": None,
+        "premiumActive": True,
+        "adsShownToday": 0,
+        "lastAdResetDate": datetime.now(timezone.utc).date().isoformat(),
+        "updatedAt": now,
     })
     await db.ledgers.insert_one({
         "id": personal_id,
@@ -535,6 +682,7 @@ async def google_auth(request: Request, body: GoogleAuthIn, response: Response):
         uid = str(uuid.uuid4())
         personal_id = f"pl_{uid}"
         now = datetime.now(timezone.utc).isoformat()
+        trial_end_iso = (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).isoformat()
         await db.users.insert_one({
             "id": uid,
             "email": email,
@@ -544,6 +692,18 @@ async def google_auth(request: Request, body: GoogleAuthIn, response: Response):
             "personal_ledger_id": personal_id,
             "current_ledger_id": personal_id,
             "created_at": now,
+            # ----- Monetization: 90-day Premium trial starts at registration -----
+            "registrationDate": now,
+            "trialStart": now,
+            "trialEnd": trial_end_iso,
+            "subscriptionStatus": "trial",
+            "subscriptionPlan": None,
+            "subscriptionStart": None,
+            "subscriptionEnd": None,
+            "premiumActive": True,
+            "adsShownToday": 0,
+            "lastAdResetDate": datetime.now(timezone.utc).date().isoformat(),
+            "updatedAt": now,
         })
         await db.ledgers.insert_one({
             "id": personal_id,
@@ -865,12 +1025,14 @@ async def reset_password(body: ResetPasswordIn, response: Response):
 
 @api.get("/auth/me")
 async def me(user=Depends(get_current_user)):
+    premium = await _sync_premium_status(user)
     return {
         "id": user["id"], "email": user["email"], "name": user["name"],
         "currency": user.get("currency", "INR"),
         "personal_ledger_id": user["personal_ledger_id"],
         "current_ledger_id": user["current_ledger_id"],
         "current_ledger": user["current_ledger"],
+        "premium": premium,
     }
 
 
@@ -2210,6 +2372,13 @@ async def analytics_monthly(user=Depends(get_current_user)):
 # ----- AI Insights -----
 @api.post("/ai/insights")
 async def ai_insights(user=Depends(get_current_user)):
+    pstatus = await _sync_premium_status(user)
+    if not pstatus["premium_active"]:
+        if not await _check_daily_free_limit(user, "aiInsightsCount", FREE_AI_INSIGHTS_DAILY_LIMIT):
+            raise HTTPException(status_code=402, detail={
+                "code": "PREMIUM_REQUIRED",
+                "message": "Free plan allows 1 AI insight refresh a day. Upgrade to Premium for unlimited Advanced Reports.",
+            })
     summary = await analytics_summary(user)
     monthly = await analytics_monthly(user)
     currency = user.get("currency", "INR")
@@ -2311,6 +2480,13 @@ async def export_csv(month: Optional[str] = None, user=Depends(get_current_user)
 
 @api.get("/export/pdf")
 async def export_pdf(month: Optional[str] = None, user=Depends(get_current_user)):
+    pstatus = await _sync_premium_status(user)
+    if not pstatus["premium_active"]:
+        if not await _check_daily_free_limit(user, "pdfExportCount", FREE_PDF_EXPORT_DAILY_LIMIT):
+            raise HTTPException(status_code=402, detail={
+                "code": "PREMIUM_REQUIRED",
+                "message": f"Free plan allows {FREE_PDF_EXPORT_DAILY_LIMIT} PDF exports a day. Upgrade to Premium for unlimited PDF Export.",
+            })
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -2446,6 +2622,14 @@ async def ai_chat(body: ChatIn, user=Depends(get_current_user)):
     """Conversational chat with Munim Ji. Uses last 6 messages + user's financial context."""
     if not body.messages:
         raise HTTPException(status_code=400, detail="No messages")
+
+    pstatus = await _sync_premium_status(user)
+    if not pstatus["premium_active"]:
+        if not await _check_daily_free_limit(user, "aiChatCount", FREE_AI_CHAT_DAILY_LIMIT):
+            raise HTTPException(status_code=402, detail={
+                "code": "PREMIUM_REQUIRED",
+                "message": f"Free plan allows {FREE_AI_CHAT_DAILY_LIMIT} AI chats a day. Upgrade to Premium for unlimited AI Assistant.",
+            })
 
     # Get user's financial snapshot for context
     summary = await analytics_summary(user)
@@ -3812,6 +3996,163 @@ async def billing_dashboard(user=Depends(get_current_user)):
         "total_products": total_products,
         "total_customers": total_customers,
     }
+
+
+# ----- Premium / Monetization -----
+class SubscribeIn(BaseModel):
+    plan: Literal["monthly", "half_yearly", "yearly", "two_yearly", "lifetime"]
+    # Kept free-form so any gateway (Google Play Billing / Razorpay / UPI /
+    # PhonePe / Paytm) can attach its own verification payload later without
+    # changing this contract.
+    payment_method: Optional[str] = "manual"
+    payment_reference: Optional[str] = None
+
+
+@api.get("/premium/plans")
+async def get_premium_plans():
+    return {"plans": list(PREMIUM_PLANS.values()), "features": PREMIUM_FEATURE_LIST}
+
+
+@api.get("/premium/status")
+async def get_premium_status(user=Depends(get_current_user)):
+    return await _sync_premium_status(user)
+
+
+@api.post("/premium/subscribe")
+@limiter.limit("10/hour")
+async def subscribe_premium(request: Request, body: SubscribeIn, user=Depends(get_current_user)):
+    """
+    Activates a plan on the account. Payment capture is intentionally
+    pluggable: in production, verify `payment_reference` against the
+    relevant gateway (Play Billing / Razorpay / UPI / PhonePe / Paytm)
+    BEFORE trusting it here. This endpoint is the single place that flips
+    subscriptionStatus, so wiring in a real gateway later only means adding
+    a verification call at the top of this function.
+    """
+    if body.plan not in PREMIUM_PLANS:
+        raise HTTPException(status_code=400, detail="Unknown plan")
+    plan = PREMIUM_PLANS[body.plan]
+    now = datetime.now(timezone.utc)
+    sub_end = None if plan["duration_days"] is None else now + timedelta(days=plan["duration_days"])
+    updates = {
+        "subscriptionPlan": plan["id"],
+        "subscriptionStart": now.isoformat(),
+        "subscriptionEnd": sub_end.isoformat() if sub_end else None,
+        "subscriptionStatus": "premium",
+        "premiumActive": True,
+        "lastPaymentMethod": body.payment_method,
+        "lastPaymentReference": body.payment_reference,
+        "updatedAt": now.isoformat(),
+    }
+    await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    fresh = await db.users.find_one({"id": user["id"]}, {"password_hash": 0, "_id": 0})
+    return await _sync_premium_status(fresh)
+
+
+@api.post("/premium/restore")
+async def restore_purchase(user=Depends(get_current_user)):
+    """Re-checks current status against the DB — useful after reinstall / relogin."""
+    fresh = await db.users.find_one({"id": user["id"]}, {"password_hash": 0, "_id": 0})
+    return await _sync_premium_status(fresh)
+
+
+# ----- Advertisements -----
+@api.get("/ads/status")
+async def ads_status(user=Depends(get_current_user)):
+    pstatus = await _sync_premium_status(user)
+    if pstatus["premium_active"]:
+        return {"ads_enabled": False, "shown_today": 0, "max_per_day": 0, "remaining": 0}
+    today = datetime.now(timezone.utc).date().isoformat()
+    shown = user.get("adsShownToday", 0) if user.get("lastAdResetDate") == today else 0
+    return {
+        "ads_enabled": True,
+        "shown_today": shown,
+        "max_per_day": MAX_ADS_PER_DAY,
+        "remaining": max(0, MAX_ADS_PER_DAY - shown),
+    }
+
+
+@api.post("/ads/track")
+async def track_ad_shown(user=Depends(get_current_user)):
+    """Called by the client right after an ad impression completes."""
+    pstatus = await _sync_premium_status(user)
+    if pstatus["premium_active"]:
+        return {"ok": False, "ads_enabled": False, "shown_today": 0, "remaining": 0}
+    today = datetime.now(timezone.utc).date().isoformat()
+    shown = user.get("adsShownToday", 0) if user.get("lastAdResetDate") == today else 0
+    if shown >= MAX_ADS_PER_DAY:
+        return {"ok": False, "shown_today": shown, "remaining": 0}
+    shown += 1
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"adsShownToday": shown, "lastAdResetDate": today}},
+    )
+    return {"ok": True, "shown_today": shown, "remaining": max(0, MAX_ADS_PER_DAY - shown)}
+
+
+# ----- Cloud Backup & Restore (Premium) -----
+BACKUP_COLLECTIONS = [
+    "accounts", "transactions", "udhaar", "recurring", "budgets", "goals",
+    "subscriptions", "investments", "warranties", "products", "parties", "invoices",
+]
+
+
+@api.get("/backup/export")
+async def backup_export(user=Depends(require_premium)):
+    owner = user["current_ledger_id"]
+    data = {}
+    for coll in BACKUP_COLLECTIONS:
+        data[coll] = await db[coll].find({"owner_id": owner}, {"_id": 0}).to_list(10000)
+    return {"exported_at": datetime.now(timezone.utc).isoformat(), "data": data}
+
+
+@api.post("/backup/restore")
+@limiter.limit("5/hour")
+async def backup_restore(request: Request, payload: dict, user=Depends(require_premium)):
+    owner = user["current_ledger_id"]
+    data = payload.get("data") or {}
+    restored = {}
+    for coll in BACKUP_COLLECTIONS:
+        rows = data.get(coll) or []
+        if not isinstance(rows, list) or not rows:
+            continue
+        for r in rows:
+            r["owner_id"] = owner
+            r.setdefault("id", str(uuid.uuid4()))
+            r.pop("_id", None)
+        await db[coll].delete_many({"owner_id": owner})
+        await db[coll].insert_many(rows)
+        restored[coll] = len(rows)
+    return {"ok": True, "restored": restored}
+
+
+# ----- Excel Export (Premium) -----
+@api.get("/export/excel")
+async def export_excel(month: Optional[str] = None, user=Depends(require_premium)):
+    from openpyxl import Workbook
+    rows, month = await _month_transactions(user, month)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transactions"
+    ws.append(["Date", "Type", "Category", "Account", "Amount", "Note"])
+    for r in rows:
+        d = r.get("date", "")
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        ws.append([d, r["type"], r["category"], r.get("account_name", ""), r["amount"], r.get("note", "")])
+    for col in ws.columns:
+        width = max((len(str(c.value)) for c in col if c.value is not None), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(40, max(10, width + 2))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="apka-munim-{month}.xlsx"'},
+    )
 
 
 # ----- Health -----
