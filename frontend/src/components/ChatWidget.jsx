@@ -3,6 +3,7 @@ import { http, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Send, X, MessageCircle, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { usePremium } from "@/context/PremiumContext";
 
 const STORAGE_KEY = "munim_chat_history";
 
@@ -19,6 +20,7 @@ const QUICK_PROMPTS = [
 ];
 
 export default function ChatWidget() {
+  const { openLocked } = usePremium();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([INITIAL_MSG]);
   const [input, setInput] = useState("");
@@ -64,11 +66,16 @@ export default function ChatWidget() {
       const { data } = await http.post("/ai/chat", { messages: next });
       setMessages([...next, { role: "assistant", content: data.reply }]);
     } catch (e) {
-      toast.error(formatApiError(e?.response?.data?.detail));
-      setMessages([...next, {
-        role: "assistant",
-        content: "Bhai thoda dikkat aa gayi 😅 — thodi der baad try karo!",
-      }]);
+      if (e?.response?.status === 402 && e?.response?.data?.detail?.code === "PREMIUM_REQUIRED") {
+        openLocked("Unlimited AI Assistant");
+        setMessages(next);
+      } else {
+        toast.error(formatApiError(e?.response?.data?.detail));
+        setMessages([...next, {
+          role: "assistant",
+          content: "Bhai thoda dikkat aa gayi 😅 — thodi der baad try karo!",
+        }]);
+      }
     }
     setSending(false);
   };
