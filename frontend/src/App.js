@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { PrivacyProvider } from "@/context/PrivacyContext";
 import { DashboardPrefsProvider } from "@/context/DashboardPrefsContext";
+import { PremiumProvider } from "@/context/PremiumContext";
 import { Toaster } from "sonner";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -37,9 +38,12 @@ import InvoiceCreate from "@/pages/InvoiceCreate";
 import BillingReports from "@/pages/BillingReports";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import Premium from "@/pages/Premium";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import InstallPrompt from "@/components/InstallPrompt";
+import LockedFeatureDialog from "@/components/LockedFeatureDialog";
+import TrialReminderPopup from "@/components/TrialReminderPopup";
 import useSEO from "@/hooks/useSEO";
 
 const Protected = ({ children }) => {
@@ -73,8 +77,11 @@ function App() {
           <AuthProvider>
             <PrivacyProvider>
             <DashboardPrefsProvider>
+            <PremiumProvider>
             <Toaster position="top-right" richColors />
             <InstallPrompt />
+            <LockedFeatureDialog />
+            <TrialReminderPopup />
             <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
@@ -107,10 +114,12 @@ function App() {
             <Route path="/billing/invoices/:id/edit" element={<Protected><InvoiceCreate /></Protected>} />
             <Route path="/billing/reports" element={<Protected><BillingReports /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
+            <Route path="/premium" element={<Protected><Premium /></Protected>} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </PremiumProvider>
           </DashboardPrefsProvider>
           </PrivacyProvider>
           </AuthProvider>
