@@ -5,9 +5,10 @@ import { useTheme } from "@/context/ThemeContext";
 import {
   Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
   BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
-  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby, Receipt, Eye, EyeOff,
+  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby, Receipt, Eye, EyeOff, Crown,
 } from "lucide-react";
 import { usePrivacy } from "@/context/PrivacyContext";
+import { usePremium } from "@/context/PremiumContext";
 import QuickAddFAB from "@/components/QuickAddFAB";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +39,7 @@ const navItems = [
   { to: "/subscriptions", label: "Subscriptions", icon: CreditCard, testid: "nav-subscriptions" },
   { to: "/ledgers", label: "Ledgers", icon: Users2, testid: "nav-ledgers" },
   { to: "/reports", label: "Reports & AI", icon: BarChart3, testid: "nav-reports" },
+  { to: "/premium", label: "Premium", icon: Crown, testid: "nav-premium" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings" },
 ];
 
@@ -94,6 +96,29 @@ function LedgerSwitcher() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function PremiumBanner() {
+  const { status } = usePremium();
+  if (!status || status.status === "premium") return null;
+  const isTrial = status.status === "trial";
+  return (
+    <NavLink
+      to="/premium"
+      data-testid="sidebar-premium-banner"
+      className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-[#D96C52]/10 to-[#D96C52]/5 border border-[#D96C52]/25 hover:border-[#D96C52]/50 transition-colors"
+    >
+      <div className="w-7 h-7 rounded-md bg-[#D96C52] flex items-center justify-center flex-shrink-0">
+        <Crown className="w-3.5 h-3.5 text-white" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold text-[#1C1917]">
+          {isTrial ? `Trial: ${status.trial_days_left}d left` : "Go Premium"}
+        </div>
+        <div className="text-[10px] text-[#78716C] truncate">Unlimited AI, reports & backup</div>
+      </div>
+    </NavLink>
   );
 }
 
@@ -158,6 +183,8 @@ export default function Layout({ children }) {
         <div className="mb-4">
           <LedgerSwitcher />
         </div>
+
+        <PremiumBanner />
 
         <button
           type="button"
