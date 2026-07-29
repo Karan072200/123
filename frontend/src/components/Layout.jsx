@@ -1,294 +1,113 @@
-import React from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
-import { useTheme } from "@/context/ThemeContext";
-import {
-  Wallet, LayoutDashboard, ArrowLeftRight, Users, Landmark,
-  BarChart3, LogOut, Repeat, Target, Users2, Sun, Moon, ChevronDown, CheckCircle2, Settings as SettingsIcon,
-  Trophy, CreditCard, Split, LineChart, Calculator, Search, Sparkles, ShieldCheck, Baby, Receipt, Eye, EyeOff, Crown,
-} from "lucide-react";
-import { usePrivacy } from "@/context/PrivacyContext";
-import { usePremium } from "@/context/PremiumContext";
-import QuickAddFAB from "@/components/QuickAddFAB";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import ChatWidget from "@/components/ChatWidget";
-import GlobalSearch from "@/components/GlobalSearch";
-import { CURRENCIES, http } from "@/lib/api";
-import { useEffect, useState } from "react";
-
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
-  { to: "/transactions", label: "Transactions", icon: ArrowLeftRight, testid: "nav-transactions" },
-  { to: "/udhaar", label: "Udhaar", icon: Users, testid: "nav-udhaar" },
-  { to: "/billing", label: "Billing", icon: Receipt, testid: "nav-billing" },
-  { to: "/splits", label: "Bill Splits", icon: Split, testid: "nav-splits" },
-  { to: "/investments", label: "Investments", icon: LineChart, testid: "nav-investments" },
-  { to: "/tax-estimator", label: "Tax Estimator", icon: Calculator, testid: "nav-tax" },
-  { to: "/what-if", label: "What-If Sim", icon: Sparkles, testid: "nav-whatif" },
-  { to: "/warranties", label: "Warranty Vault", icon: ShieldCheck, testid: "nav-warranties" },
-  { to: "/kids", label: "Kids Money", icon: Baby, testid: "nav-kids" },
-  { to: "/accounts", label: "Accounts", icon: Landmark, testid: "nav-accounts" },
-  { to: "/recurring", label: "Recurring", icon: Repeat, testid: "nav-recurring" },
-  { to: "/budgets", label: "Budgets", icon: Target, testid: "nav-budgets" },
-  { to: "/goals", label: "Goals", icon: Trophy, testid: "nav-goals" },
-  { to: "/subscriptions", label: "Subscriptions", icon: CreditCard, testid: "nav-subscriptions" },
-  { to: "/ledgers", label: "Ledgers", icon: Users2, testid: "nav-ledgers" },
-  { to: "/reports", label: "Reports & AI", icon: BarChart3, testid: "nav-reports" },
-  { to: "/premium", label: "Premium", icon: Crown, testid: "nav-premium" },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings" },
-];
-
-function LedgerSwitcher() {
-  const { user, switchLedger } = useAuth();
-  const [ledgers, setLedgers] = useState([]);
-  const [open, setOpen] = useState(false);
-
-  const load = async () => {
-    try {
-      const { data } = await http.get("/ledgers");
-      setLedgers(data);
-    } catch { /* ignore */ }
-  };
-  useEffect(() => { if (open) load(); }, [open]);
-  useEffect(() => { load(); }, [user?.current_ledger_id]);
-
-  const current = user?.current_ledger;
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          data-testid="ledger-switcher-btn"
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F2F0EA] hover:bg-[#E7E5DF] text-left transition-colors"
-        >
-          <div className="w-7 h-7 rounded-md bg-[#2A4F4F] flex items-center justify-center flex-shrink-0">
-            <Users2 className="w-3.5 h-3.5 text-white" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-[#78716C] uppercase tracking-widest font-semibold">Ledger</div>
-            <div className="text-sm font-semibold text-[#1C1917] truncate">{current?.name || "Personal"}</div>
-          </div>
-          <ChevronDown className="w-4 h-4 text-[#78716C] flex-shrink-0" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel className="text-xs uppercase tracking-widest text-[#A8A29E]">Switch Ledger</DropdownMenuLabel>
-        {ledgers.map((l) => (
-          <DropdownMenuItem key={l.id}
-            data-testid={`ledger-switcher-option-${l.id}`}
-            onClick={async () => { if (l.id !== user?.current_ledger_id) await switchLedger(l.id); }}>
-            <span className="flex-1 truncate">{l.name}</span>
-            {l.id === user?.current_ledger_id && <CheckCircle2 className="w-4 h-4 text-[#2A4F4F]" />}
-            {l.type === "shared" && l.id !== user?.current_ledger_id && (
-              <span className="text-xs text-[#A8A29E] ml-2">shared</span>
-            )}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <NavLink to="/ledgers" className="cursor-pointer" data-testid="ledger-switcher-manage">
-            Manage ledgers…
-          </NavLink>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function PremiumBanner() {
-  const { status } = usePremium();
-  if (!status || status.status === "premium") return null;
-  const isTrial = status.status === "trial";
-  return (
-    <NavLink
-      to="/premium"
-      data-testid="sidebar-premium-banner"
-      className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-[#D96C52]/10 to-[#D96C52]/5 border border-[#D96C52]/25 hover:border-[#D96C52]/50 transition-colors"
-    >
-      <div className="w-7 h-7 rounded-md bg-[#D96C52] flex items-center justify-center flex-shrink-0">
-        <Crown className="w-3.5 h-3.5 text-white" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold text-[#1C1917]">
-          {isTrial ? `Trial: ${status.trial_days_left}d left` : "Go Premium"}
-        </div>
-        <div className="text-[10px] text-[#78716C] truncate">Unlimited AI, reports & backup</div>
-      </div>
-    </NavLink>
-  );
-}
+import React, { useState } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { usePrivacy } from '../context/PrivacyContext';
+import { Menu, Eye, EyeOff, Search, User } from 'lucide-react';
+import HamburgerMenu from './HamburgerMenu';
+import GlobalSearch from './GlobalSearch';
 
 export default function Layout({ children }) {
-  const { user, logout, setCurrency } = useAuth();
-  const { theme, toggle: toggleTheme } = useTheme();
-  const { hidden: privacyOn, toggle: togglePrivacy } = usePrivacy();
-  const nav = useNavigate();
-  const [searchOpen, setSearchOpen] = useState(false);
+  const { isPrivacyMode, togglePrivacyMode } = usePrivacy();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const doLogout = async () => {
-    await logout();
-    nav("/login");
-  };
-
-  // Cmd+K / Ctrl+K global shortcut
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
-        e.preventDefault();
-        setSearchOpen((v) => !v);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  const navPrimary = [
+    { label: 'Dashboard', path: '/' },
+    { label: 'Transactions', path: '/transactions' },
+    { label: 'Billing', path: '/billing' },
+  ];
 
   return (
-    <div className="min-h-screen flex bg-[#F9F8F6]">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-[#E7E5DF] p-5">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-heading text-xl font-bold text-[#1C1917]">Apka Munim</span>
-          </div>
-          <div className="flex items-center gap-1">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
+      {/* Clean Top Header */}
+      <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          
+          {/* LEFT: Hamburger & Logo */}
+          <div className="flex items-center space-x-3">
             <button
-              onClick={togglePrivacy}
-              data-testid="privacy-toggle-btn"
-              aria-label="Toggle privacy"
-              title={privacyOn ? "Show amounts" : "Hide amounts"}
-              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
+              onClick={() => setIsMenuOpen(true)}
+              className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none"
+              aria-label="Open Navigation Menu"
             >
-              {privacyOn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <Menu className="w-6 h-6" />
             </button>
+
+            <button 
+              onClick={() => navigate('/')} 
+              className="flex items-center space-x-2 focus:outline-none group"
+            >
+              <img 
+                src="/apkamunim-playstore-icon-512.png" 
+                alt="Apka Munim Logo" 
+                className="w-8 h-8 rounded-md group-hover:scale-105 transition-transform"
+              />
+              <span className="font-bold text-lg tracking-tight text-emerald-800 dark:text-emerald-400 hidden sm:inline">
+                Apka Munim
+              </span>
+            </button>
+          </div>
+
+          {/* MIDDLE: Primary Tabs (Dashboard, Transactions, Billing) */}
+          <nav className="flex items-center space-x-1 sm:space-x-2">
+            {navPrimary.map((item) => {
+              const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className={`px-3 py-2 rounded-md text-xs sm:text-sm font-semibold transition-colors ${
+                    isActive
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {item.label}
+                </NavLink>
+              );
+            })}
+          </nav>
+
+          {/* RIGHT: Global Search, Privacy Mode Toggle, Profile */}
+          <div className="flex items-center space-x-2">
             <button
-              onClick={toggleTheme}
-              data-testid="theme-toggle-btn"
-              aria-label="Toggle theme"
-              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
+              onClick={() => setIsSearchOpen(true)}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              title="Global Search"
             >
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <Search className="w-5 h-5" />
+            </button>
+
+            <button
+              onClick={togglePrivacyMode}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              title={isPrivacyMode ? "Show Amounts" : "Hide Amounts"}
+            >
+              {isPrivacyMode ? <EyeOff className="w-5 h-5 text-amber-600" /> : <Eye className="w-5 h-5" />}
+            </button>
+
+            <button
+              onClick={() => navigate('/settings')}
+              className="p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200"
+              title="Settings"
+            >
+              <User className="w-5 h-5" />
             </button>
           </div>
+
         </div>
+      </header>
 
-        <div className="mb-4">
-          <LedgerSwitcher />
-        </div>
+      {/* Hamburger Side Drawer */}
+      <HamburgerMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
 
-        <PremiumBanner />
+      {/* Search Modal */}
+      {isSearchOpen && <GlobalSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />}
 
-        <button
-          type="button"
-          onClick={() => setSearchOpen(true)}
-          data-testid="global-search-trigger"
-          className="mb-4 w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#E7E5DF] bg-[#F9F8F6] hover:bg-[#F2F0EA] text-left transition-colors group"
-        >
-          <Search className="w-4 h-4 text-[#78716C] group-hover:text-[#1C1917]" />
-          <span className="text-sm text-[#78716C] flex-1">Search kuch bhi...</span>
-          <kbd className="hidden md:inline-flex items-center gap-0.5 text-[10px] font-mono text-[#A8A29E] bg-white border border-[#E7E5DF] rounded px-1.5 py-0.5">
-            {isMac ? "⌘" : "Ctrl"} K
-          </kbd>
-        </button>
-
-        <nav className="space-y-1 flex-1">
-          {navItems.map((n) => (
-            <NavLink key={n.to} to={n.to} data-testid={n.testid}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#2A4F4F] text-white"
-                    : "text-[#57534E] hover:bg-[#F2F0EA] hover:text-[#1C1917]"
-                }`
-              }>
-              <n.icon className="w-4 h-4" />
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="mt-4 pt-4 border-t border-[#E7E5DF] space-y-3">
-          <div>
-            <div className="text-xs font-semibold tracking-widest uppercase text-[#A8A29E] mb-1.5">Currency</div>
-            <Select value={user?.currency || "INR"} onValueChange={setCurrency}>
-              <SelectTrigger className="border-[#E7E5DF] h-9 text-sm" data-testid="sidebar-currency-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="text-xs text-[#78716C] truncate">{user?.email}</div>
-          <Button variant="outline" onClick={doLogout} data-testid="logout-button"
-            className="w-full border-[#E7E5DF] text-[#57534E] hover:bg-[#F2F0EA]">
-            <LogOut className="w-4 h-4 mr-2" /> Logout
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main className="flex-1 min-w-0">
-        {/* Mobile top nav */}
-        <div className="md:hidden bg-white border-b border-[#E7E5DF] px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#2A4F4F] flex items-center justify-center">
-              <Wallet className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-heading text-lg font-bold text-[#1C1917]">Apka Munim</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setSearchOpen(true)} data-testid="mobile-global-search-trigger"
-              aria-label="Search"
-              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
-              <Search className="w-4 h-4" />
-            </button>
-            <button onClick={togglePrivacy} data-testid="mobile-privacy-toggle"
-              aria-label="Toggle privacy"
-              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
-              {privacyOn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-            <button onClick={toggleTheme} data-testid="mobile-theme-toggle"
-              className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA]">
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <Button variant="ghost" size="sm" onClick={doLogout} data-testid="mobile-logout-button">
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-        <div className="md:hidden bg-white border-b border-[#E7E5DF] px-3 py-2">
-          <LedgerSwitcher />
-        </div>
-        <div className="md:hidden bg-white border-b border-[#E7E5DF] px-2 py-2 flex gap-1 overflow-x-auto">
-          {navItems.map((n) => (
-            <NavLink key={n.to} to={n.to}
-              className={({ isActive }) =>
-                `flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                  isActive ? "bg-[#2A4F4F] text-white" : "text-[#57534E] bg-[#F2F0EA]"
-                }`
-              }>
-              <n.icon className="w-3.5 h-3.5" />
-              {n.label}
-            </NavLink>
-          ))}
-        </div>
-
-        <div className="p-6 md:p-8 max-w-7xl mx-auto">{children}</div>
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        {children}
       </main>
-      <ChatWidget />
-      <QuickAddFAB />
-      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }
