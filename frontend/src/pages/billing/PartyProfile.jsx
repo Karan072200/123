@@ -52,7 +52,10 @@ export default function PartyProfile() {
   const totals = data?.totals || { billed: 0, paid: 0, outstanding: 0, count: 0 };
 
   const isCustomer = party?.kind === "customer";
-  const accent = isCustomer ? "emerald" : "sky";
+  // Static class map — dynamic bg-${accent}-50 would be purged by Tailwind JIT.
+  const accentClasses = isCustomer
+    ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400"
+    : "bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900 text-sky-600 dark:text-sky-400";
 
   const downloadStatement = async () => {
     try {
@@ -116,7 +119,7 @@ export default function PartyProfile() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div
-            className={`w-10 h-10 rounded bg-${accent}-50 dark:bg-${accent}-950/40 border border-${accent}-200 dark:border-${accent}-900 flex items-center justify-center text-${accent}-600 dark:text-${accent}-400`}
+            className={`w-10 h-10 rounded border flex items-center justify-center ${accentClasses}`}
           >
             <Users className="w-5 h-5" />
           </div>

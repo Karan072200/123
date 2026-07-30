@@ -17,49 +17,50 @@ Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + Mongo
 - Public account-deletion request (unauthenticated form)
 - Slowapi rate-limiting on auth + sensitive endpoints
 
-## What was implemented in the cleanup/stabilization pass (Feb 2026)
-
-### Backend (`backend/server.py`)
+## What was implemented in the cleanup / stabilization pass (Feb 2026)
 - Removed broken duplicate `DELETE /api/user/delete-account`, rewrote `POST /api/public/delete-account-request` with EmailStr + rate limit.
-- Graceful env checks (`JWT_SECRET`, `GOOGLE_CLIENT_ID`) with clear RuntimeError.
+- Graceful env checks (`JWT_SECRET`, `GOOGLE_CLIENT_ID`).
 - Added `WarrantyUpdateIn`, `PATCH /warranties/{id}`, `PATCH /kids/{kid_id}`, `PATCH /accounts/{account_id}`.
-- Rate-limited + premium-gated `POST /voice/parse-transaction` (5/day free LLM fallback).
-
-### Frontend
-- Landing / Dashboard split via `RootRoute`.
-- FY-aware invoice numbering, PDF polish (logo, GSTIN, T&C), UPI QR on PDF, E-invoice IRN fields, WhatsApp share.
+- FY-aware invoice numbering, PDF polish, UPI QR, E-invoice IRN fields, WhatsApp share.
 - Payment reconciliation UI + Bank CSV import.
 - Recurring auto-run via APScheduler + Overdue Email Digest.
 - Multi-language support (Hindi / Hinglish / English) via LanguageContext.
 
-## ERP Billing Workspace refactor (Feb 2026 — Phase 1)
+## ERP Billing Workspace refactor — Phase 1 (Feb 2026)
+- New `BillingSidebar.jsx` (vertical, 8 sections, collapsible, mobile drawer, "Back to Personal").
+- Rewritten `BillingLayout.jsx` — standalone shell, no longer nested inside personal Layout.
+- Rewritten `BillingHeader.jsx` — Create dropdown (Sales / Purchase / Money), FY switcher.
+- Removed dead code: `BillingSubNav.jsx`, duplicate `BillingDashboardWorkspace.jsx`.
+- Fixed CustomerLedger/SupplierLedger to use `/billing/customers` + `/billing/suppliers`.
+- 4 new pages: Sales Returns, Customer Ledger, Supplier Ledger, Inventory Adjustments.
+- Iteration 11 report: 100% pass (backend regression + frontend flows).
 
-Standalone ERP-style workspace, no longer nested inside the personal Layout:
-- **New**: `components/billing/BillingSidebar.jsx` — vertical, collapsible, section-grouped nav with active-child auto-expand and mobile drawer. Includes a "Back to Personal" button that returns to `/dashboard`.
-- **Rewritten**: `components/billing/BillingLayout.jsx` — standalone shell: `<BillingSidebar>` + `<BillingHeader>` + main content. Owns its own `financialYear` state.
-- **Rewritten**: `components/billing/BillingHeader.jsx` — sticky top bar with Create dropdown (Sales / Purchase / Money), FY switcher, mobile menu toggle, Personal shortcut, settings.
-- **Removed** (dead code): `components/billing/BillingSubNav.jsx` and duplicate `components/billing/BillingDashboardWorkspace.jsx`.
-- **App.js**: `ProtectedBillingRoute` no longer wraps children in the personal `Layout`.
+## ERP Billing Workspace — Phase 2 (Feb 2026, current)
 
-### New dedicated Billing pages
-- `/billing/sales-returns` → `pages/billing/SalesReturns.jsx` (Credit Note flow with return-specific header + guidance).
-- `/billing/customer-ledger` → `pages/billing/CustomerLedger.jsx` (per-customer total sales + outstanding, search) — data source `/api/billing/customers` + `/api/billing/invoices`.
-- `/billing/supplier-ledger` → `pages/billing/SupplierLedger.jsx` (per-supplier total purchase + payable, search) — data source `/api/billing/suppliers` + `/api/billing/invoices`.
-- `/billing/inventory-adjustments` → `pages/billing/InventoryAdjustments.jsx` (stock levels, low / out-of-stock counters, valuation).
+### Backend (`server.py`)
+- `POST /api/billing/invoices/{id}/convert` — one-tap conversion Quotation/SO/Challan/Proforma → Tax Invoice with `converted_from_*` / `converted_to_*` audit fields.
+- `GET /api/billing/parties/{id}` — single-party fetch.
+- `GET /api/billing/parties/{id}/statement` — party ledger JSON.
+- `GET /api/billing/parties/{id}/statement.pdf` — WhatsApp-shareable ledger PDF (ReportLab).
+- `GET /api/gstin/lookup/{gstin}` — 15-char structural parse → state, PAN, entity type. Rate-limited 30/min.
 
-### Testing (iteration 11)
-- Backend regression 7/7 green (billing/invoices, billing/products, billing/customers, billing/suppliers, ledgers, udhaar, analytics/summary).
-- Frontend: standalone ERP shell verified on /billing (no main Layout leak on any /billing/*), all 8 sidebar sections + auto-expand + drilldown, header Create dropdown, FY switcher, Personal shortcut, all 4 new pages rendering with correct data-testids.
-- Post-fix smoke: CustomerLedger seeded with a real customer via `POST /api/billing/customers` now displays the row correctly (screenshot verified).
+### Frontend
+- Convert button + Converted badge on Invoices.jsx rows (quotation/SO/challan/proforma).
+- New `PartyProfile.jsx` at `/billing/parties/:id` — KPIs, invoices list, WhatsApp share, Statement PDF download.
+- New `PurchaseBills.jsx` at `/billing/purchase-bills` — first-class module with search + KPIs. BillingSidebar Purchase group now points here.
+- New `GstinInput.jsx` reusable component — wired into Parties.jsx add-customer dialog with auto-fill on blur.
+- CustomerLedger / SupplierLedger rows navigate to `/billing/parties/:id`.
+- Static Tailwind class map for PartyProfile accent color (JIT-safe).
 
-## Smoke tests run
-- `yarn build` compiles clean, gzip main bundle 383 kB.
-- All 28 backend tests still pass (from prior pass).
+### Iteration 12 test results (both) — 100% pass
+- Backend 13/13 pytest cases (GSTIN valid/invalid/unauth, Convert quotation→tax + source flag flip, Party profile+statement totals, statement.pdf `%PDF-` header, Purchase invoice CRUD, full regression).
+- Frontend 7/7 flows (purchase-bills page, party-profile page, convert flow, converted-badge, GSTIN autofill, personal-layout intact on /dashboard, statement PDF direct fetch).
 
 ## Backlog / Next
-- P1: Document conversion flows — Quotation / SO / Delivery Challan → Invoice.
-- P1: Customer / Supplier profile pages with full ledger drilldown + statement PDF.
-- P1: Purchase Bills as a first-class module (not just an Invoices filter).
+- P1: Purchase Bills — server-side `?type=purchase` filter (currently client-side; caps at 500 invoices).
+- P1: Convert dialog — replace `window.confirm` with shadcn `<AlertDialog>` for a11y.
+- P1: GSTIN legal-name enrichment via a paid GST API (ClearTax / GSTN) — the endpoint contract is ready to accept it.
+- P2: InvoiceCreate `type=purchase` UI flow end-to-end verification.
 - P2: Google Play Data Safety declaration audit.
-- P2: Automated MongoDB backups (Atlas snapshot cron).
-- P2: Rotate all leaked keys (Mongo, Resend, Groq, JWT, Google) — user action.
+- P2: Automated MongoDB Atlas backups.
+- P2: Rotate all leaked keys (Mongo, Resend, Groq, JWT, Google) — pending user action.
