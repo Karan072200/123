@@ -4945,6 +4945,161 @@ async def get_webhook_info(user=Depends(get_current_user)):
     }
 
 
+# ----- Webhook payload adapters (Razorpay, Cashfree, PhonePe) -----
+def _adapt_razorpay(body: dict) -> dict:
+    """Razorpay `payment.captured` webhook — extract amount + reference."""
+    p = ((body.get("payload") or {}).get("payment") or {}).get("entity") or {}
+    return {
+        "amount": float(p.get("amount", 0)) / 100.0,  # Razorpay uses paise
+        "reference": p.get("description") or p.get("notes", {}).get("invoice") or p.get("id"),
+        "payer_name": (p.get("notes") or {}).get("customer_name") or p.get("email"),
+        "payer_upi": p.get("vpa"),
+        "payment_mode": p.get("method", "upi"),
+        "notes": p.get("id"),
+    }
+
+
+def _adapt_cashfree(body: dict) -> dict:
+    """Cashfree `PAYMENT_SUCCESS_WEBHOOK` (v3) — normalize to our schema."""
+    data = body.get("data") or {}
+    payment = data.get("payment") or {}
+    customer = data.get("customer_details") or {}
+    order = data.get("order") or {}
+    return {
+        "amount": float(payment.get("payment_amount", order.get("order_amount", 0))),
+        "reference": payment.get("bank_reference") or order.get("order_id") or order.get("order_note"),
+        "payer_name": customer.get("customer_name"),
+        "payer_upi": (payment.get("payment_method") or {}).get("upi", {}).get("upi_id"),
+        "payment_mode": (payment.get("payment_group") or "upi").lower(),
+        "notes": payment.get("cf_payment_id"),
+    }
+
+
+def _adapt_phonepe(body: dict) -> dict:
+    """PhonePe merchant callback — after base64+JSON decode of the `response` field."""
+    data = body.get("data") or body
+    return {
+        "amount": float(data.get("amount", 0)) / 100.0,  # PhonePe uses paise
+        "reference": data.get("merchantTransactionId") or data.get("transactionId"),
+        "payer_name": (data.get("paymentInstrument") or {}).get("accountHolderName"),
+        "payer_upi": (data.get("paymentInstrument") or {}).get("utr"),
+        "payment_mode": "upi",
+        "notes": data.get("providerReferenceId"),
+    }
+
+
+ADAPTERS = {
+    "razorpay": _adapt_razorpay,
+    "cashfree": _adapt_cashfree,
+    "phonepe": _adapt_phonepe,
+}
+
+
+async def _ingest_bank_payment(user_doc: dict, data: dict, source: str):
+    """Insert bank_payment + try auto-match. Returns the inserted doc id."""
+    owner = user_doc.get("current_ledger_id") or user_doc["personal_ledger_id"]
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": owner,
+        "amount": float(data.get("amount") or 0),
+        "reference": data.get("reference"),
+        "payer_name": data.get("payer_name"),
+        "payer_upi": data.get("payer_upi"),
+        "payment_mode": data.get("payment_mode") or "upi",
+        "payment_date": data.get("payment_date") or now.isoformat(),
+        "notes": data.get("notes"),
+        "status": "unmatched",
+        "matched_invoice_id": None,
+        "matched_invoice_number": None,
+        "created_at": now.isoformat(),
+        "source": source,
+    }
+    await db.bank_payments.insert_one(doc)
+    try:
+        open_invoices = await db.invoices.find(
+            {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+        ).to_list(500)
+        best, best_score = None, 0
+        for inv in open_invoices:
+            s = _score_match(doc, inv)
+            if s > best_score:
+                best_score, best = s, inv
+        if best and best_score >= 60:
+            new_paid = round(float(best.get("paid_amount") or 0) + float(doc["amount"]), 2)
+            new_balance = round(float(best.get("total") or 0) - new_paid, 2)
+            await db.invoices.update_one(
+                {"id": best["id"], "owner_id": owner},
+                {"$set": {"paid_amount": new_paid, "balance_due": max(0.0, new_balance),
+                          "updated_at": now.isoformat()}},
+            )
+            await db.bank_payments.update_one(
+                {"id": doc["id"]},
+                {"$set": {"status": "matched", "matched_invoice_id": best["id"],
+                          "matched_invoice_number": best["invoice_number"],
+                          "match_score": best_score, "matched_at": now.isoformat()}},
+            )
+        elif best and best_score >= 30:
+            await db.bank_payments.update_one(
+                {"id": doc["id"]},
+                {"$set": {"status": "possible", "matched_invoice_id": best["id"],
+                          "matched_invoice_number": best["invoice_number"],
+                          "match_score": best_score}},
+            )
+    except Exception as e:
+        logger.warning(f"Adapter auto-match skipped: {e}")
+    return doc["id"]
+
+
+@app.post("/api/webhooks/upi/{business_id}/{provider}")
+@limiter.limit("120/hour")
+async def provider_payment_webhook(business_id: str, provider: str, request: Request):
+    """
+    Provider-specific webhook. `provider` ∈ {razorpay, cashfree, phonepe}.
+    Payload is normalised via ADAPTERS before insertion + auto-match.
+    Signature verification (X-Signature-256 header) is enforced if a secret is set.
+    """
+    if provider not in ADAPTERS:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    user_doc = await db.users.find_one({"id": business_id}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    raw = await request.body()
+    sent_sig = request.headers.get("x-signature-256", "")
+    secret = user_doc.get("webhook_secret")
+    if secret and not _verify_webhook_signature(secret, raw, sent_sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        body = await request.json()
+        normalized = ADAPTERS[provider](body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Adapter failed: {e}")
+
+    if not normalized.get("amount"):
+        raise HTTPException(status_code=400, detail="Payload missing amount")
+
+    payment_id = await _ingest_bank_payment(user_doc, normalized, source=provider)
+    return {"status": "accepted", "payment_id": payment_id, "provider": provider}
+
+
+# ----- Overdue Digest HTML preview (no send) -----
+@api.get("/billing/overdue-digest/preview")
+async def preview_overdue_digest(user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    today = datetime.now(timezone.utc).date().isoformat()
+    open_invoices = await db.invoices.find(
+        {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+    ).to_list(500)
+    overdue = [
+        i for i in open_invoices
+        if (i.get("due_date") or "") and str(i["due_date"])[:10] < today
+    ]
+    html = _build_overdue_html(user.get("name", "there"), overdue, user.get("currency", "INR"))
+    return {"html": html, "count": len(overdue), "recipient": user["email"]}
+
+
 # ----- Public account deletion request (unauthenticated form) -----
 import re as _re
 

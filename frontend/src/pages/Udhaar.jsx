@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, CheckCircle2, Bell, Phone } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, Bell, Phone, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 function AddUdhaarDialog({ open, onOpenChange, onDone }) {
@@ -242,6 +242,27 @@ export default function Udhaar() {
             className="bg-[#25D366] hover:bg-[#1DA851] text-white rounded-full"
           >
             <Bell className="w-4 h-4 mr-1" /> Remind All on WhatsApp
+          </Button>
+          <Button
+            onClick={async () => {
+              try {
+                const { data } = await http.get("/billing/overdue-digest/preview");
+                const w = window.open("", "_blank");
+                if (w) {
+                  w.document.write(`<title>Overdue Digest Preview · ${data.count} pending</title>` + data.html);
+                  w.document.close();
+                } else {
+                  toast.error("Popup blocked — allow popups for this site");
+                }
+              } catch (e) {
+                toast.error(e?.response?.data?.detail || "Preview failed");
+              }
+            }}
+            data-testid="udhaar-preview-digest-btn"
+            variant="outline"
+            className="border-[#B8763A] text-[#B8763A] hover:bg-[#B8763A]/5 rounded-full"
+          >
+            <Eye className="w-4 h-4 mr-1" /> Preview Digest
           </Button>
           <Button
             onClick={async () => {

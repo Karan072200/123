@@ -177,6 +177,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
         { label: 'Privacy Policy', path: '/privacy', icon: ShieldQuestion },
         { label: 'Terms & Conditions', path: '/terms', icon: FileText },
         { label: 'Help & Support', path: '/settings?tab=help', icon: HelpCircle },
+        { label: 'Payment Webhook', path: '/settings/webhook', icon: SettingsIcon },
         { label: 'Delete Account', path: '/settings?tab=delete-account', icon: Trash2, danger: true },
       ],
     },

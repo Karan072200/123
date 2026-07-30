@@ -39,6 +39,7 @@ import InvoiceCreate from './pages/InvoiceCreate';
 import RecurringInvoices from './pages/RecurringInvoices';
 import InvoiceTemplates from './pages/InvoiceTemplates';
 import BankPayments from './pages/BankPayments';
+import WebhookSetup from './pages/WebhookSetup';
 import Premium from './pages/Premium';
 import Settings from './pages/Settings';
 import Privacy from './pages/Privacy';
@@ -126,6 +127,7 @@ export default function App() {
               <Route path="/billing/recurring-invoices" element={<ProtectedBillingRoute><RecurringInvoices /></ProtectedBillingRoute>} />
               <Route path="/billing/invoice-templates" element={<ProtectedBillingRoute><InvoiceTemplates /></ProtectedBillingRoute>} />
               <Route path="/billing/bank-payments" element={<ProtectedBillingRoute><BankPayments /></ProtectedBillingRoute>} />
+              <Route path="/settings/webhook" element={<ProtectedMainRoute><WebhookSetup /></ProtectedMainRoute>} />
               <Route path="/billing/quotations" element={<ProtectedBillingRoute><Invoices type="quotation" /></ProtectedBillingRoute>} />
               <Route path="/billing/proforma" element={<ProtectedBillingRoute><Invoices type="proforma" /></ProtectedBillingRoute>} />
               <Route path="/billing/challans" element={<ProtectedBillingRoute><Invoices type="challan" /></ProtectedBillingRoute>} />
