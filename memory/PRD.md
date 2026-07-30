@@ -43,9 +43,14 @@ Standalone ERP-style workspace, no longer nested inside the personal Layout:
 
 ### New dedicated Billing pages
 - `/billing/sales-returns` → `pages/billing/SalesReturns.jsx` (Credit Note flow with return-specific header + guidance).
-- `/billing/customer-ledger` → `pages/billing/CustomerLedger.jsx` (per-customer total sales + outstanding, search).
-- `/billing/supplier-ledger` → `pages/billing/SupplierLedger.jsx` (per-supplier total purchase + payable, search).
+- `/billing/customer-ledger` → `pages/billing/CustomerLedger.jsx` (per-customer total sales + outstanding, search) — data source `/api/billing/customers` + `/api/billing/invoices`.
+- `/billing/supplier-ledger` → `pages/billing/SupplierLedger.jsx` (per-supplier total purchase + payable, search) — data source `/api/billing/suppliers` + `/api/billing/invoices`.
 - `/billing/inventory-adjustments` → `pages/billing/InventoryAdjustments.jsx` (stock levels, low / out-of-stock counters, valuation).
+
+### Testing (iteration 11)
+- Backend regression 7/7 green (billing/invoices, billing/products, billing/customers, billing/suppliers, ledgers, udhaar, analytics/summary).
+- Frontend: standalone ERP shell verified on /billing (no main Layout leak on any /billing/*), all 8 sidebar sections + auto-expand + drilldown, header Create dropdown, FY switcher, Personal shortcut, all 4 new pages rendering with correct data-testids.
+- Post-fix smoke: CustomerLedger seeded with a real customer via `POST /api/billing/customers` now displays the row correctly (screenshot verified).
 
 ## Smoke tests run
 - `yarn build` compiles clean, gzip main bundle 383 kB.

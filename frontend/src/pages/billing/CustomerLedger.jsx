@@ -23,13 +23,13 @@ export default function CustomerLedger() {
     setLoading(true);
     try {
       const [p, inv] = await Promise.all([
-        http.get("/parties").then((r) => r.data).catch(() => []),
+        http.get("/billing/customers").then((r) => r.data),
         http.get("/billing/invoices").then((r) => r.data).catch(() => []),
       ]);
       setParties(Array.isArray(p) ? p : []);
       setInvoices(Array.isArray(inv) ? inv : []);
     } catch (e) {
-      toast.error("Ledger load failed");
+      toast.error("Customer ledger load failed");
     } finally {
       setLoading(false);
     }
@@ -40,9 +40,8 @@ export default function CustomerLedger() {
   }, []);
 
   const customerRows = useMemo(() => {
-    const customers = parties.filter(
-      (p) => (p.party_type || p.type || "customer") === "customer"
-    );
+    // /billing/customers already returns only customers; no need to re-filter
+    const customers = parties;
     const SALES = new Set([
       "tax",
       "gst",

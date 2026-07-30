@@ -23,13 +23,13 @@ export default function SupplierLedger() {
     setLoading(true);
     try {
       const [p, inv] = await Promise.all([
-        http.get("/parties").then((r) => r.data).catch(() => []),
+        http.get("/billing/suppliers").then((r) => r.data),
         http.get("/billing/invoices").then((r) => r.data).catch(() => []),
       ]);
       setParties(Array.isArray(p) ? p : []);
       setInvoices(Array.isArray(inv) ? inv : []);
     } catch (e) {
-      toast.error("Ledger load failed");
+      toast.error("Supplier ledger load failed");
     } finally {
       setLoading(false);
     }
@@ -40,9 +40,8 @@ export default function SupplierLedger() {
   }, []);
 
   const supplierRows = useMemo(() => {
-    const suppliers = parties.filter(
-      (p) => (p.party_type || p.type) === "supplier"
-    );
+    // /billing/suppliers already returns only suppliers
+    const suppliers = parties;
     const PURCHASE = new Set(["purchase", "purchase-order", "debit"]);
     const map = new Map();
     for (const s of suppliers) {
