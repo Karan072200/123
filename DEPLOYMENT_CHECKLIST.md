@@ -16,8 +16,10 @@ Stack: **React (Vercel)** + **FastAPI (Railway)** + **MongoDB Atlas**
   - `CORS_ORIGINS=https://<your-vercel-domain>.vercel.app`
   - `JWT_SECRET` (32+ random hex chars, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`)
   - `GOOGLE_CLIENT_ID` (from Google Cloud Console)
-  - `EMERGENT_EMAIL_KEY=disabled` (or real key if using email)
-  - `EMAIL_FROM_NAME=Apka Munim`
+  - **Email (pick ONE path):**
+    - **Path A — Direct Resend (recommended for Railway):** `RESEND_API_KEY=re_xxx` + `SENDER_EMAIL=noreply@yourdomain.com` + `EMAIL_FROM_NAME=Apka Munim`
+    - **Path B — Emergent proxy (Emergent hosting only):** `EMERGENT_EMAIL_KEY=<value>`
+  - If neither set, weekly digest silently skips — that's fine for launch
 - [ ] Start command auto-detected from `Procfile` / `railway.json`:
       `uvicorn server:app --host 0.0.0.0 --port $PORT`
 - [ ] Public domain generated

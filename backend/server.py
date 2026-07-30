@@ -4639,7 +4639,44 @@ import httpx as _httpx
 
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMERGENT_EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "").strip()
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "").strip()
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Apka Munim").strip() or "Apka Munim"
+
+
+async def _send_email(to_email: str, subject: str, html: str) -> dict:
+    """
+    Send an email via whichever service is configured.
+    Priority: direct Resend > Emergent-managed Resend proxy.
+    Raises RuntimeError if no provider is configured.
+    """
+    # Path A — direct Resend account (production-friendly, works on Railway/Vercel/anywhere)
+    if RESEND_API_KEY and SENDER_EMAIL:
+        from_field = f"{EMAIL_FROM_NAME} <{SENDER_EMAIL}>" if SENDER_EMAIL else EMAIL_FROM_NAME
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"from": from_field, "to": [to_email], "subject": subject, "html": html},
+            )
+        resp.raise_for_status()
+        return {"id": resp.json().get("id"), "provider": "resend"}
+
+    # Path B — Emergent-managed proxy (only works from Emergent-hosted apps)
+    if EMERGENT_EMAIL_KEY and not EMERGENT_EMAIL_KEY.startswith("dev-placeholder") and EMERGENT_EMAIL_KEY != "disabled":
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{EMAIL_BASE_URL}/api/v1/email/send",
+                headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
+                json={"to": [to_email], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME},
+            )
+        resp.raise_for_status()
+        return {"id": resp.json().get("id"), "provider": "emergent"}
+
+    raise RuntimeError("No email provider configured")
 
 
 def _build_overdue_html(user_name: str, overdue: list, currency: str = "INR") -> str:
@@ -4700,12 +4737,7 @@ def _build_overdue_html(user_name: str, overdue: list, currency: str = "INR") ->
 
 @api.post("/billing/overdue-digest/send")
 async def send_overdue_digest(user=Depends(get_current_user)):
-    """Send an overdue-invoice digest email to the current user via Emergent-managed Resend."""
-    if not EMERGENT_EMAIL_KEY or EMERGENT_EMAIL_KEY.startswith("dev-placeholder"):
-        raise HTTPException(
-            status_code=503,
-            detail="Email service not configured. Set EMERGENT_EMAIL_KEY in backend/.env.",
-        )
+    """Send an overdue-invoice digest email to the current user via configured email provider."""
     owner = user["current_ledger_id"]
     today = datetime.now(timezone.utc).date().isoformat()
     open_invoices = await db.invoices.find(
@@ -4716,32 +4748,30 @@ async def send_overdue_digest(user=Depends(get_current_user)):
         if (inv.get("due_date") or "") and str(inv["due_date"])[:10] < today
     ]
     html = _build_overdue_html(user.get("name", "there"), overdue, user.get("currency", "INR"))
-    payload = {
-        "to": [user["email"]],
-        "subject": f"Overdue Digest · {len(overdue)} invoice(s) pending",
-        "html": html,
-        "from_name": EMAIL_FROM_NAME,
-    }
     try:
-        async with _httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{EMAIL_BASE_URL}/api/v1/email/send",
-                headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
-                json=payload,
-            )
-        resp.raise_for_status()
+        result = await _send_email(
+            to_email=user["email"],
+            subject=f"Overdue Digest · {len(overdue)} invoice(s) pending",
+            html=html,
+        )
         return {
             "status": "sent",
             "recipient": user["email"],
             "count": len(overdue),
-            "email_id": resp.json().get("id"),
+            "provider": result.get("provider"),
+            "email_id": result.get("id"),
         }
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Email service not configured. Set RESEND_API_KEY + SENDER_EMAIL in backend/.env.",
+        )
     except _httpx.HTTPStatusError as e:
-        logger.error(f"Overdue digest send failed: {e.response.status_code} {e.response.text}")
+        logger.error(f"Digest send failed: {e.response.status_code} {e.response.text}")
         raise HTTPException(status_code=502, detail="Failed to send email")
     except Exception as e:
-        logger.error(f"Overdue digest error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send email")
+        logger.error(f"Digest error: {e}")
+        raise HTTPException(status_code=502, detail="Failed to send email")
 
 
 # ----- Recurring auto-run trigger (called from /auth/me on daily cadence) -----
@@ -5322,8 +5352,10 @@ async def _startup():
         scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
         async def _weekly_overdue_digest_job():
-            if not EMERGENT_EMAIL_KEY or EMERGENT_EMAIL_KEY.startswith("dev-placeholder"):
-                logger.info("Digest job skipped — EMERGENT_EMAIL_KEY not configured")
+            has_resend = bool(os.environ.get("RESEND_API_KEY", "").strip() and os.environ.get("SENDER_EMAIL", "").strip())
+            has_emergent = EMERGENT_EMAIL_KEY and not EMERGENT_EMAIL_KEY.startswith("dev-placeholder") and EMERGENT_EMAIL_KEY != "disabled"
+            if not has_resend and not has_emergent:
+                logger.info("Digest job skipped — no email provider configured (need RESEND_API_KEY+SENDER_EMAIL or EMERGENT_EMAIL_KEY)")
                 return
             try:
                 users = await db.users.find({}, {"_id": 0}).to_list(2000)
@@ -5344,19 +5376,12 @@ async def _startup():
                         continue
                     html = _build_overdue_html(u.get("name", "there"), overdue, u.get("currency", "INR"))
                     try:
-                        async with _httpx.AsyncClient(timeout=30) as client:
-                            r = await client.post(
-                                f"{EMAIL_BASE_URL}/api/v1/email/send",
-                                headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
-                                json={
-                                    "to": [u["email"]],
-                                    "subject": f"Overdue Digest · {len(overdue)} invoice(s) pending",
-                                    "html": html,
-                                    "from_name": EMAIL_FROM_NAME,
-                                },
-                            )
-                            if r.status_code < 300:
-                                sent += 1
+                        await _send_email(
+                            to_email=u["email"],
+                            subject=f"Overdue Digest · {len(overdue)} invoice(s) pending",
+                            html=html,
+                        )
+                        sent += 1
                     except Exception as e:
                         logger.warning(f"Digest send to {u['email']} failed: {e}")
                 logger.info(f"Weekly overdue digest complete: {sent} emails sent")
