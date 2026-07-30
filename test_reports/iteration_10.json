@@ -1,0 +1,38 @@
+{
+  "summary": "Backend regression pass for Apka Munim billing stack (iteration 10). 28/28 pytest tests passed against the public REACT_APP_BACKEND_URL. Verified FY-aware invoice numbering (INV/2526/0001, INV/2526/0002, GST/2526/...), invoice-templates CRUD, recurring-invoices CRUD + PATCH 404 on unknown id, webhook secret rotate/info, HMAC verification (401 without sig, 200 with valid sig, invoice balance_due cleared via reference match), Razorpay/Cashfree/PhonePe adapter webhooks + unknown-provider 404, HDFC CSV import (credit rows only, source=csv-import) + 400 on empty, reconcile auto-match + confirm on 'possible', overdue-digest preview HTML + send returning 503 with placeholder EMERGENT_EMAIL_KEY, webhook-health aggregation with all 5 providers, PATCH 404s on /accounts,/kids,/warranties, public delete-account-request 422 on invalid email + rate-limit 5/hour returning 429, canonical DELETE /auth/me returns 200 and legacy /user/delete-account returns 404.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/public/delete-account-request", "issue": "SlowAPI limiter uses get_remote_address (request.client.host) without X-Forwarded-For. Behind ingress the client IP can rotate across requests, causing 429s to fire non-deterministically (observed pattern e.g. 200,200,429,429,200,429,429,200). Rate-limit still triggers within 20 requests but not at the strict 6th. Consider a key_func that trusts X-Forwarded-For (leftmost) for accurate per-user throttling. Same concern applies to /auth/register and /auth/login."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_billing_regression.py",
+    "/app/test_reports/pytest/iteration10.xml"
+  ],
+  "action_items": [
+    "(Optional) Harden slowapi key_func to use X-Forwarded-For so /public/delete-account-request rate-limit is deterministic per user IP behind the ingress.",
+    "(Nit) The duplicate `startup()` coroutine at line 5341 (defined after @app.on_event('startup') at line 5279) is dead code — the second `async def startup()` is never registered as a startup handler, so the DB indexes (users.email unique, accounts, transactions, budgets, password_reset_tokens, pin_attempts, ledgers.invite_code/members, etc.) are never created. Register it with @app.on_event('startup') or merge into _startup()."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 5361 lines — split into modules (auth, billing, webhooks, digest, ledgers, family) for maintainability.",
+    "Duplicate `async def startup()` at line 5341 lacks @app.on_event decorator — MongoDB indexes are never actually created. This is a latent correctness/performance bug (e.g. users.email uniqueness is only enforced by app-level check in /auth/register).",
+    "_score_match precedence bug at line 4525: `if payer and cust and payer in cust or cust in payer` is parsed as `(payer and cust and payer in cust) or (cust in payer)` — the second clause fires even when payer is empty (empty-string is substring of anything), giving spurious +5 for every invoice. Wrap with parentheses: `if payer and cust and (payer in cust or cust in payer)`.",
+    "SlowAPI key_func uses request.client.host which is the proxy hop IP under Kubernetes ingress — rate limits are effectively cluster-wide and can rotate across pods. Use X-Forwarded-For / X-Real-IP.",
+    "Overdue digest send catches broad Exception -> 500 (line 4744) but Emergent's HTTPStatusError branch above returns 502; treat non-200 upstream uniformly and never expose 500 to clients.",
+    "In-memory SlowAPI storage does not survive restarts and is per-process; add Redis storage for production rate limiting.",
+    "Webhook signature verification allows unsigned payloads if no secret is set on the user (line 4856). This is documented as 'dev mode' but should be gated behind an ENV flag so production users are forced to set a secret."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_billing_regression.py (new)",
+    "/app/test_reports/pytest/iteration10.xml (junit output)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Auto-registered per run — test_it10_<uuid>@example.com / TestPass123! (deleted at end of session).",
+  "seed_data_creation": "None persistent — all TEST_ prefixed customers/templates/invoices are wiped when the fixture user is deleted via DELETE /auth/me.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression file lives at /app/backend/tests/test_iteration10_billing_regression.py. Rerun with `REACT_APP_BACKEND_URL=... python -m pytest backend/tests/test_iteration10_billing_regression.py -o addopts=''` (project pytest.ini adds xdist scope which conflicts with the session-scoped bootstrap fixture — hence -o addopts=''). Registration endpoint is 5/hour rate-limited per IP; each run consumes 1 registration slot. If a run fails at bootstrap with a rate-limit error, wait or use a different exit IP.",
+  "rca of the issue": "n/a — no failing features. The only observation is intermittent 429 timing on /public/delete-account-request which is a proxy/ingress IP-rotation artifact rather than a functional bug; the endpoint IS rate-limited and does return 429 under load."
+}
