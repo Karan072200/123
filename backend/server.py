@@ -5278,6 +5278,24 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
+    # Ensure indexes (was a dead duplicate function without the decorator)
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.accounts.create_index([("owner_id", 1)])
+        await db.transactions.create_index([("owner_id", 1), ("date", -1)])
+        await db.udhaar.create_index([("owner_id", 1)])
+        await db.recurring.create_index([("owner_id", 1)])
+        await db.budgets.create_index([("owner_id", 1), ("category", 1)], unique=True)
+        await db.ledgers.create_index("invite_code")
+        await db.ledgers.create_index("members")
+        await db.goals.create_index([("owner_id", 1)])
+        await db.subscriptions.create_index([("owner_id", 1), ("next_billing_date", 1)])
+        await db.password_reset_tokens.create_index("token", unique=True)
+        await db.password_reset_tokens.create_index("expires_at")
+        await db.pin_attempts.create_index("email", unique=True)
+    except Exception as e:
+        logger.warning(f"Index creation warning: {e}")
+
     # Weekly overdue-digest scheduler — Mondays 08:00 Asia/Kolkata
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -5337,21 +5355,6 @@ async def _startup():
         logger.info("APScheduler started — weekly overdue digest scheduled Mon 08:00 IST")
     except Exception as e:
         logger.warning(f"Scheduler init failed: {e}")
-    logger.info("Apka Munim API started")
-async def startup():
-    await db.users.create_index("email", unique=True)
-    await db.accounts.create_index([("owner_id", 1)])
-    await db.transactions.create_index([("owner_id", 1), ("date", -1)])
-    await db.udhaar.create_index([("owner_id", 1)])
-    await db.recurring.create_index([("owner_id", 1)])
-    await db.budgets.create_index([("owner_id", 1), ("category", 1)], unique=True)
-    await db.ledgers.create_index("invite_code")
-    await db.ledgers.create_index("members")
-    await db.goals.create_index([("owner_id", 1)])
-    await db.subscriptions.create_index([("owner_id", 1), ("next_billing_date", 1)])
-    await db.password_reset_tokens.create_index("token", unique=True)
-    await db.password_reset_tokens.create_index("expires_at")
-    await db.pin_attempts.create_index("email", unique=True)
     logger.info("Apka Munim API started")
 
 
