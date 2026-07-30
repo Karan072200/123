@@ -5,19 +5,50 @@ import { useAuth } from "@/context/AuthContext";
 import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Eye, Printer, Copy, Edit3 } from "lucide-react";
+import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle } from "lucide-react";
 import DateFilter, { computeRange } from "@/components/DateFilter";
+
+function loadCompany() {
+  try { return JSON.parse(localStorage.getItem("am_company_info") || "{}"); }
+  catch { return {}; }
+}
+
+function buildShareMessage(inv, company, currency) {
+  const money = (v) => formatMoney(Number(v || 0), currency);
+  const line2 = inv.balance_due > 0
+    ? `Balance Due: ${money(inv.balance_due)}`
+    : "Paid \u2713";
+  const link = `${window.location.origin}/billing/invoices/${inv.id}/view`;
+  return `Namaste ${inv.customer_name || ""},\n\nAapka invoice ${inv.invoice_number} ready hai:\nAmount: ${money(inv.total)}\n${line2}\n\nDetails: ${link}\n\nDhanyavaad!\n${company.company_name || ""}`.trim();
+}
+
+function whatsappShare(inv, customer, company, currency) {
+  const msg = buildShareMessage(inv, company, currency);
+  const phone = (customer?.phone || "").replace(/\D/g, "");
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 export default function Invoices() {
   const { user } = useAuth();
   const cur = user?.currency || "INR";
   const [items, setItems] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [datePreset, setDatePreset] = useState("all");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [typeFilter, setTypeFilter] = useState("all");
   const nav = useNavigate();
 
-  const load = async () => { const { data } = await http.get("/billing/invoices"); setItems(data || []); };
+  const load = async () => {
+    const [inv, cus] = await Promise.all([
+      http.get("/billing/invoices").then(r => r.data).catch(() => []),
+      http.get("/billing/customers").then(r => r.data).catch(() => []),
+    ]);
+    setItems(inv || []);
+    setCustomers(cus || []);
+  };
   useEffect(() => { load(); }, []);
 
   const filtered = React.useMemo(() => {
@@ -41,6 +72,11 @@ export default function Invoices() {
 
   const printInv = (id) => nav(`/billing/invoices/${id}/view?print=1`);
   const view = (id) => nav(`/billing/invoices/${id}/view`);
+  const share = (inv) => {
+    const company = loadCompany();
+    const customer = customers.find((c) => c.id === inv.customer_id);
+    whatsappShare(inv, customer, company, cur);
+  };
 
   return (
     <div className="space-y-4" data-testid="invoices-page">
@@ -117,7 +153,8 @@ export default function Invoices() {
                     <td className="p-3 text-right whitespace-nowrap">
                       <button onClick={() => view(inv.id)} data-testid={`view-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="View"><Eye className="w-3.5 h-3.5" /></button>
                       <button onClick={() => nav(`/billing/invoices/${inv.id}/edit`)} data-testid={`edit-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => printInv(inv.id)} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Print"><Printer className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => share(inv)} data-testid={`whatsapp-inv-${inv.id}`} className="p-1.5 hover:bg-[#25D366]/10 rounded text-[#25D366]" title="Share on WhatsApp"><MessageCircle className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => printInv(inv.id)} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Print / PDF"><Printer className="w-3.5 h-3.5" /></button>
                       <button onClick={() => remove(inv.id)} className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>

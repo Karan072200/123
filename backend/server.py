@@ -3769,21 +3769,55 @@ def _compute_invoice_totals(items, discount_amount, shipping, gst_mode):
     }
 
 
-async def _next_invoice_number(owner_id, invoice_type):
-    prefix_map = {"tax": "INV", "gst": "GST", "proforma": "PRF", "quotation": "QTN", "challan": "CHL", "credit": "CN", "debit": "DN"}
+def _fy_code_from_date(dt) -> str:
+    """
+    Return the Indian Financial Year short code for a datetime.
+    Example: 2026-02-15 -> "2526"; 2026-04-15 -> "2627".
+    """
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            dt = datetime.now(timezone.utc)
+    y = dt.year
+    m = dt.month
+    start = y if m >= 4 else y - 1
+    return f"{start % 100:02d}{(start + 1) % 100:02d}"
+
+
+async def _next_invoice_number(owner_id, invoice_type, invoice_date=None):
+    """
+    Generate an FY-aware invoice number like `INV/2526/0001`.
+    The sequence resets per Financial Year (Apr–Mar) per invoice type.
+    """
+    prefix_map = {
+        "tax": "INV", "gst": "GST", "proforma": "PRF", "quotation": "QTN",
+        "challan": "CHL", "credit": "CN", "debit": "DN",
+        "sales-order": "SO", "purchase-order": "PO", "purchase": "PUR",
+    }
     prefix = prefix_map.get(invoice_type, "INV")
-    year = datetime.now(timezone.utc).strftime("%y")
+
+    base_dt = invoice_date or datetime.now(timezone.utc)
+    fy = _fy_code_from_date(base_dt)
+    fy_prefix = f"{prefix}/{fy}/"
+
+    # Look up highest sequence in THIS financial year + invoice_type combo.
+    # We use a regex-anchored match on invoice_number so counter resets per FY.
     last = await db.invoices.find_one(
-        {"owner_id": owner_id, "invoice_type": invoice_type},
-        sort=[("created_at", -1)]
+        {
+            "owner_id": owner_id,
+            "invoice_type": invoice_type,
+            "invoice_number": {"$regex": f"^{prefix}/{fy}/"},
+        },
+        sort=[("invoice_number", -1)],
     )
     seq = 1
     if last and last.get("invoice_number"):
         try:
-            seq = int(str(last["invoice_number"]).split("-")[-1]) + 1
+            seq = int(str(last["invoice_number"]).split("/")[-1]) + 1
         except Exception:
             seq = 1
-    return f"{prefix}-{year}-{seq:04d}"
+    return f"{fy_prefix}{seq:04d}"
 
 
 @api.get("/billing/products")
@@ -3894,7 +3928,7 @@ async def create_invoice(body: InvoiceIn, user=Depends(get_current_user)):
     owner = user["current_ledger_id"]
     inv_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    inv_no = await _next_invoice_number(owner, body.invoice_type)
+    inv_no = await _next_invoice_number(owner, body.invoice_type, body.invoice_date)
 
     items = [it.dict() for it in body.items]
     totals = _compute_invoice_totals(items, body.discount_amount or 0, body.shipping or 0, body.gst_mode)

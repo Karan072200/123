@@ -176,6 +176,11 @@ export default function InvoiceCreate() {
     let company = {};
     try { company = JSON.parse(localStorage.getItem("am_company_info") || "{}"); } catch {}
     const customer = customers.find((c) => c.id === invoice.customer_id);
+    const invoiceTypeLabel = {
+      tax: "Tax Invoice", gst: "GST Invoice", proforma: "Proforma Invoice",
+      quotation: "Quotation", challan: "Delivery Challan",
+      credit: "Credit Note", debit: "Debit Note",
+    }[invoice.invoice_type] || `${invoice.invoice_type} Invoice`;
     const shareMsg = `Namaste ${invoice.customer_name || ""},\n\nAapka invoice ${invoice.invoice_number} ready hai:\nAmount: ${formatMoney(invoice.total, cur)}\n${invoice.balance_due > 0 ? "Balance Due: " + formatMoney(invoice.balance_due, cur) + "\n" : "Paid ✓\n"}\nDetails: ${window.location.origin}/billing/invoices/${invoice.id}/view\n\nDhanyavaad!\n${company.company_name || ""}`;
     const shareWhatsApp = () => {
       const phone = (customer?.phone || "").replace(/\D/g, "");
@@ -211,68 +216,108 @@ export default function InvoiceCreate() {
         </div>
         <div className="bg-white p-8 border border-[#E7E5DF] rounded-xl max-w-3xl mx-auto print:border-0 print:shadow-none print:p-4"
           data-testid="invoice-view">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-start gap-3">
-              {company.logo && <img src={company.logo} alt="logo" className="h-14 w-auto object-contain" />}
-              <div>
-                <h1 className="font-heading text-2xl font-bold text-[#1C1917]">{company.company_name || user?.name || "Apka Munim"}</h1>
-                {company.gstin && <p className="text-xs text-[#78716C]">GSTIN: {company.gstin}</p>}
-                {company.phone && <p className="text-xs text-[#78716C]">Ph: {company.phone}</p>}
-                {company.email && <p className="text-xs text-[#78716C]">{company.email}</p>}
-                {company.address && <p className="text-xs text-[#78716C] whitespace-pre-wrap max-w-xs">{company.address}</p>}
+          {/* HEADER — Business identity */}
+          <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-[#2A4F4F]">
+            <div className="flex items-start gap-4 min-w-0">
+              {company.logo ? (
+                <img src={company.logo} alt="logo" className="h-16 w-16 object-contain rounded border border-[#E7E5DF] p-1 bg-white shrink-0" />
+              ) : (
+                <div className="h-16 w-16 rounded bg-[#2A4F4F] text-white flex items-center justify-center font-heading font-bold text-xl shrink-0">
+                  {(company.company_name || user?.name || "AM").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="font-heading text-2xl font-extrabold text-[#1C1917] leading-tight">{company.company_name || user?.name || "Apka Munim"}</h1>
+                {company.gstin && (
+                  <p className="text-xs text-[#1C1917] font-semibold mt-0.5">
+                    GSTIN: <span className="font-mono">{company.gstin}</span>
+                  </p>
+                )}
+                {company.address && <p className="text-xs text-[#57534E] whitespace-pre-wrap max-w-xs mt-0.5">{company.address}</p>}
+                <div className="text-xs text-[#57534E] mt-0.5 space-x-2">
+                  {company.phone && <span>Ph: {company.phone}</span>}
+                  {company.email && <span>· {company.email}</span>}
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-xs uppercase tracking-wider text-[#78716C]">{invoice.invoice_type} Invoice</div>
-              <div className="font-mono font-bold text-lg">{invoice.invoice_number}</div>
-              <div className="text-xs text-[#78716C]">{new Date(invoice.invoice_date).toLocaleDateString("en-IN")}</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-6 mb-6 text-sm">
-            <div>
-              <div className="text-xs uppercase text-[#78716C] mb-1">Bill To</div>
-              <div className="font-semibold">{invoice.customer_name || "Walk-in"}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs uppercase text-[#78716C] mb-1">Payment</div>
-              <div className="font-semibold">{invoice.payment_mode?.toUpperCase()}</div>
-              {invoice.balance_due > 0 && (
-                <div className="text-xs text-[#B15039]">Due: {formatMoney(invoice.balance_due, cur)}</div>
+            <div className="text-right shrink-0 ml-4">
+              <div className="inline-block bg-[#2A4F4F] text-white px-3 py-1 rounded-md text-[10px] uppercase tracking-wider font-bold">
+                {invoiceTypeLabel}
+              </div>
+              <div className="font-mono font-extrabold text-lg mt-1 text-[#1C1917]">{invoice.invoice_number}</div>
+              <div className="text-xs text-[#78716C]">
+                Date: {new Date(invoice.invoice_date).toLocaleDateString("en-IN")}
+              </div>
+              {invoice.due_date && (
+                <div className="text-xs text-[#78716C]">
+                  Due: {new Date(invoice.due_date).toLocaleDateString("en-IN")}
+                </div>
               )}
             </div>
           </div>
+
+          {/* PARTY + PAYMENT */}
+          <div className="grid grid-cols-2 gap-6 mb-6 text-sm">
+            <div className="border border-[#E7E5DF] rounded-lg p-3">
+              <div className="text-[10px] uppercase text-[#78716C] mb-1 font-bold tracking-wider">Bill To</div>
+              <div className="font-semibold text-[#1C1917]">{invoice.customer_name || "Walk-in Customer"}</div>
+              {customer?.gstin && (
+                <div className="text-xs text-[#57534E] mt-0.5">GSTIN: <span className="font-mono">{customer.gstin}</span></div>
+              )}
+              {customer?.address && <div className="text-xs text-[#57534E] whitespace-pre-wrap mt-0.5">{customer.address}</div>}
+              {customer?.phone && <div className="text-xs text-[#57534E]">Ph: {customer.phone}</div>}
+              {customer?.email && <div className="text-xs text-[#57534E]">{customer.email}</div>}
+            </div>
+            <div className="border border-[#E7E5DF] rounded-lg p-3 text-right">
+              <div className="text-[10px] uppercase text-[#78716C] mb-1 font-bold tracking-wider">Payment</div>
+              <div className="font-semibold text-[#1C1917]">{(invoice.payment_mode || "").toUpperCase() || "—"}</div>
+              <div className="text-xs text-[#57534E] mt-0.5">
+                {invoice.gst_mode === "inclusive" ? "GST Inclusive" : "GST Exclusive"}
+              </div>
+              {invoice.balance_due > 0 ? (
+                <div className="text-xs text-[#B15039] font-bold mt-1">Balance Due: {formatMoney(invoice.balance_due, cur)}</div>
+              ) : invoice.total > 0 ? (
+                <div className="text-xs text-[#3B6446] font-bold mt-1">PAID IN FULL</div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* ITEM TABLE */}
           <table className="w-full text-sm mb-6">
             <thead>
-              <tr className="border-b-2 border-[#1C1917] text-xs uppercase">
-                <th className="text-left py-2">Item</th>
-                <th className="text-right py-2">Qty</th>
-                <th className="text-right py-2">Rate</th>
-                <th className="text-right py-2">GST%</th>
-                <th className="text-right py-2">Amount</th>
+              <tr className="border-b-2 border-[#1C1917] text-xs uppercase bg-[#F9F8F6]">
+                <th className="text-left py-2 px-2 w-8">#</th>
+                <th className="text-left py-2 px-2">Item / Description</th>
+                <th className="text-left py-2 px-2 hidden sm:table-cell">HSN/SAC</th>
+                <th className="text-right py-2 px-2">Qty</th>
+                <th className="text-right py-2 px-2">Rate</th>
+                <th className="text-right py-2 px-2">GST%</th>
+                <th className="text-right py-2 px-2">Amount</th>
               </tr>
             </thead>
             <tbody>
               {invoice.items?.map((it, i) => (
-                <tr key={i} className="border-b border-[#E7E5DF]">
-                  <td className="py-2">
-                    <div>{it.name}</div>
-                    {it.hsn && <div className="text-xs text-[#78716C]">HSN: {it.hsn}</div>}
-                  </td>
-                  <td className="text-right py-2">{it.qty} {it.unit}</td>
-                  <td className="text-right py-2">{formatMoney(it.price, cur)}</td>
-                  <td className="text-right py-2">{it.gst_rate || 0}%</td>
-                  <td className="text-right py-2 font-medium">{formatMoney(it._line_total || it.qty * it.price, cur)}</td>
+                <tr key={i} className="border-b border-[#E7E5DF] page-break-inside-avoid">
+                  <td className="py-2 px-2 text-[#78716C]">{i + 1}</td>
+                  <td className="py-2 px-2">{it.name}</td>
+                  <td className="py-2 px-2 text-xs text-[#78716C] hidden sm:table-cell font-mono">{it.hsn || "—"}</td>
+                  <td className="text-right py-2 px-2">{it.qty} {it.unit}</td>
+                  <td className="text-right py-2 px-2">{formatMoney(it.price, cur)}</td>
+                  <td className="text-right py-2 px-2">{it.gst_rate || 0}%</td>
+                  <td className="text-right py-2 px-2 font-medium">{formatMoney(it._line_total || it.qty * it.price, cur)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="ml-auto max-w-xs text-sm space-y-1">
+
+          {/* TOTALS */}
+          <div className="ml-auto max-w-xs text-sm space-y-1 mb-6">
             <div className="flex justify-between"><span>Subtotal</span><span>{formatMoney(invoice.taxable, cur)}</span></div>
             <div className="flex justify-between"><span>GST</span><span>{formatMoney(invoice.tax, cur)}</span></div>
             {invoice.shipping > 0 && <div className="flex justify-between"><span>Shipping</span><span>{formatMoney(invoice.shipping, cur)}</span></div>}
-            {invoice.discount_amount > 0 && <div className="flex justify-between"><span>Discount</span><span>-{formatMoney(invoice.discount_amount, cur)}</span></div>}
-            <div className="flex justify-between border-t border-[#1C1917] pt-2 text-lg font-heading font-bold">
-              <span>Total</span><span>{formatMoney(invoice.total, cur)}</span>
+            {invoice.discount_amount > 0 && <div className="flex justify-between text-[#B15039]"><span>Discount</span><span>-{formatMoney(invoice.discount_amount, cur)}</span></div>}
+            <div className="flex justify-between border-t-2 border-[#1C1917] pt-2 text-lg font-heading font-bold">
+              <span>Grand Total</span><span>{formatMoney(invoice.total, cur)}</span>
             </div>
             <div className="flex justify-between text-[#3B6446]">
               <span>Paid</span><span>{formatMoney(invoice.paid_amount || 0, cur)}</span>
@@ -283,25 +328,48 @@ export default function InvoiceCreate() {
               </div>
             )}
           </div>
+
+          {/* NOTES */}
           {invoice.notes && (
-            <div className="mt-6 text-xs text-[#78716C]"><strong>Notes:</strong> {invoice.notes}</div>
+            <div className="mt-6 text-xs text-[#57534E] border border-[#E7E5DF] rounded-md p-3">
+              <div className="font-bold uppercase tracking-wider text-[10px] text-[#78716C] mb-1">Notes</div>
+              <div className="whitespace-pre-wrap">{invoice.notes}</div>
+            </div>
           )}
-          {invoice.terms && (
-            <div className="mt-2 text-xs text-[#78716C]"><strong>Terms:</strong> {invoice.terms}</div>
-          )}
+
+          {/* SIGNATURE */}
           {company.signature && (
             <div className="mt-6 flex justify-end">
               <div className="text-right">
                 <img src={company.signature} alt="signature" className="h-12 ml-auto object-contain" />
-                <div className="border-t border-[#1C1917] w-32 mt-1 pt-1 text-xs">Authorized Signature</div>
+                <div className="border-t border-[#1C1917] w-40 mt-1 pt-1 text-xs">Authorized Signature</div>
+                {company.company_name && (
+                  <div className="text-[10px] text-[#78716C]">for {company.company_name}</div>
+                )}
               </div>
             </div>
           )}
-          {company.invoice_footer && (
-            <div className="mt-4 text-xs text-[#78716C] text-center">{company.invoice_footer}</div>
+
+          {/* TERMS & CONDITIONS FOOTER */}
+          {(invoice.terms || company.invoice_footer) && (
+            <div className="mt-8 pt-4 border-t border-[#E7E5DF] text-xs text-[#57534E] space-y-2 page-break-inside-avoid">
+              {invoice.terms && (
+                <div>
+                  <div className="font-bold uppercase tracking-wider text-[10px] text-[#78716C] mb-1">Terms &amp; Conditions</div>
+                  <div className="whitespace-pre-wrap leading-snug">{invoice.terms}</div>
+                </div>
+              )}
+              {company.invoice_footer && (
+                <div className="pt-2 border-t border-dashed border-[#E7E5DF]">
+                  <div className="whitespace-pre-wrap leading-snug">{company.invoice_footer}</div>
+                </div>
+              )}
+            </div>
           )}
-          <div className="mt-6 pt-4 border-t border-[#E7E5DF] text-center text-xs text-[#A8A29E]">
-            Powered by Apka Munim · apkamunim.com
+
+          {/* BRAND FOOTER */}
+          <div className="mt-6 pt-4 border-t border-[#E7E5DF] text-center text-[10px] text-[#A8A29E]">
+            This is a computer-generated invoice · Powered by Apka Munim · apkamunim.com
           </div>
         </div>
       </div>
