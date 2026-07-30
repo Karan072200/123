@@ -47,6 +47,10 @@ import Terms from './pages/Terms';
 import PublicDeleteAccount from './pages/PublicDeleteAccount';
 
 import BillingDashboardWorkspace from './pages/billing/BillingDashboardWorkspace';
+import SalesReturns from './pages/billing/SalesReturns';
+import CustomerLedger from './pages/billing/CustomerLedger';
+import SupplierLedger from './pages/billing/SupplierLedger';
+import InventoryAdjustments from './pages/billing/InventoryAdjustments';
 
 function ProtectedMainRoute({ children }) {
   const { user } = useAuth();
@@ -59,13 +63,10 @@ function ProtectedBillingRoute({ children }) {
   const { user } = useAuth();
   if (user === null) return null; // still checking session via /auth/me
   if (user === false) return <Navigate to="/login" replace />;
-  // Billing pages sit inside the same primary Layout so Dashboard/Transactions/Billing
-  // remain visible on every billing screen. BillingLayout only adds the secondary nav.
-  return (
-    <Layout>
-      <BillingLayout>{children}</BillingLayout>
-    </Layout>
-  );
+  // Billing is a standalone ERP workspace — it owns its own sidebar + header
+  // and does NOT sit inside the main personal-finance Layout. Users can jump
+  // back to the personal workspace via the "Back to Personal" button.
+  return <BillingLayout>{children}</BillingLayout>;
 }
 
 function RootRoute() {
@@ -137,8 +138,12 @@ export default function App() {
               <Route path="/billing/debit-notes" element={<ProtectedBillingRoute><Invoices type="debit-note" /></ProtectedBillingRoute>} />
               <Route path="/billing/parties" element={<ProtectedBillingRoute><Parties /></ProtectedBillingRoute>} />
               <Route path="/billing/inventory" element={<ProtectedBillingRoute><Products /></ProtectedBillingRoute>} />
+              <Route path="/billing/inventory-adjustments" element={<ProtectedBillingRoute><InventoryAdjustments /></ProtectedBillingRoute>} />
               <Route path="/billing/outstanding" element={<ProtectedBillingRoute><Udhaar /></ProtectedBillingRoute>} />
               <Route path="/billing/ledgers" element={<ProtectedBillingRoute><Ledgers /></ProtectedBillingRoute>} />
+              <Route path="/billing/customer-ledger" element={<ProtectedBillingRoute><CustomerLedger /></ProtectedBillingRoute>} />
+              <Route path="/billing/supplier-ledger" element={<ProtectedBillingRoute><SupplierLedger /></ProtectedBillingRoute>} />
+              <Route path="/billing/sales-returns" element={<ProtectedBillingRoute><SalesReturns /></ProtectedBillingRoute>} />
               <Route path="/billing/payments" element={<ProtectedBillingRoute><Udhaar /></ProtectedBillingRoute>} />
               <Route path="/billing/reports" element={<ProtectedBillingRoute><BillingReports /></ProtectedBillingRoute>} />
               <Route path="/billing/settings" element={<ProtectedBillingRoute><Settings tab="billing" /></ProtectedBillingRoute>} />

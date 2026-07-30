@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 11 verified the standalone ERP Billing workspace refactor (Phase 1) end-to-end. Backend regression: 7/7 endpoints (/api/billing/invoices, /api/billing/products, /api/billing/customers, /api/billing/suppliers, /api/ledgers, /api/udhaar, /api/analytics/summary) return 200 for a freshly registered user. Frontend: registered a fresh user, /billing renders BillingLayout with data-testid=billing-sidebar + billing-header (no main Layout hamburger/nav). All 8 sidebar sections present with correct data-testids (billing-nav-{sales,purchase,parties,inventory,payments,ledgers,reports,settings}); Sales is auto-expanded and 'Sales Returns' child link exists; Purchase toggles open on click and reveals children. Header Create dropdown -> Sale Invoice navigates to /billing/invoices/new?type=tax and sidebar stays visible. All 4 new pages render (sales-returns-page, customer-ledger-page + search + 'Koi customer nahi mila' empty state, supplier-ledger-page + 'Koi supplier nahi mila', inventory-adjustments-page with all 4 KPIs Total Products/Stock Value/Low Stock/Out of Stock). Existing billing routes (/billing/invoices, /quotations, /parties, /inventory, /outstanding, /ledgers, /reports, /settings) all render inside the ERP shell. billing-back-to-personal button lands on /dashboard with main Layout; no billing-sidebar leak on /dashboard, /transactions, /accounts, /budgets.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/parties", "issue": "Endpoint does not exist (returns 404). CustomerLedger.jsx and SupplierLedger.jsx call http.get('/parties') which silently fails via .catch(()=>[]) leaving both ledgers empty forever even when the user has customers/suppliers. The correct endpoints are /api/billing/customers and /api/billing/suppliers."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Customer Ledger data load", "issue": "Uses http.get('/parties') which 404s. Ledger will always show 'Koi customer nahi mila' empty state even for users with customers. Should call /billing/customers (or /billing/customers + /billing/suppliers merged, filtered by party_type).", "affected_selectors": ["[data-testid=customer-ledger-page]"]},
+      {"flow": "Supplier Ledger data load", "issue": "Uses http.get('/parties') which 404s. Ledger will always show 'Koi supplier nahi mila' empty state even for users with suppliers. Should call /billing/suppliers.", "affected_selectors": ["[data-testid=supplier-ledger-page]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_billing_regression.py",
+    "/app/test_reports/pytest/iteration11.xml"
+  ],
+  "action_items": [
+    "Fix CustomerLedger.jsx and SupplierLedger.jsx: replace http.get('/parties') with http.get('/billing/customers') and http.get('/billing/suppliers') respectively (or combine both and filter by party_type). The current .catch(()=>[]) masks a real 404 so ledgers appear empty for real users."
+  ],
+  "critical_code_review_comments": [
+    "CustomerLedger.jsx L26 and SupplierLedger.jsx L26 call a non-existent /api/parties endpoint but swallow the error via .catch(()=>[]); this makes the empty-state test pass on a fresh account but silently breaks the feature for any real user with parties. Prefer explicit error surfacing (toast on failure) and hit the real endpoints /billing/customers and /billing/suppliers.",
+    "BillingSidebar.jsx has typo `currentPas` / `pas` (should be `pathAndSearch` or similar) — cosmetic but hurts readability.",
+    "BillingSidebar.jsx initialExpanded is memoized on `pas` but useState only reads the initial value; expanded state won't auto-open a section on client-side navigation between two collapsed groups (works for direct load only). Consider a useEffect that merges new auto-expand keys into `expanded` when pas changes.",
+    "BillingLayout.jsx keeps `financialYear` in local state but never propagates it downstream (no context/URL sync) — the FY switcher is UI-only right now, downstream pages don't filter by it.",
+    "BillingHeader Create menu 'Credit Note / Sales Return' navigates to /billing/invoices/new?type=credit while SalesReturns 'New Sales Return' also uses ?type=credit — consistent, but Invoices.jsx uses type='credit-note' string, so ensure InvoiceCreate normalizes both."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_billing_regression.py (new)",
+    "/app/test_reports/pytest/iteration11.xml (junit output)"
+  ],
+  "success_rate": {"backend": "100% (7/7 relevant endpoints)", "frontend": "100% of refactor acceptance criteria met; 2 latent integration bugs in ledger data loads (masked by .catch)"},
+  "test_credentials": "Auto-registered per run — erp_ui_<ts>@test.com / Testpass123!",
+  "seed_data_creation": "None persistent; backend user cleaned up via DELETE /api/auth/me.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Refactor is functionally correct. The only real bug found is CustomerLedger/SupplierLedger calling /parties (404). Backend never had /api/parties — always used /api/billing/customers and /api/billing/suppliers. After fix, retest by seeding a customer via POST /api/billing/customers and confirming it shows in Customer Ledger table.",
+  "rca of the issue": "CustomerLedger.jsx/SupplierLedger.jsx were written against an assumed unified /parties collection endpoint that doesn't exist server-side. Server exposes GET /api/billing/customers and GET /api/billing/suppliers only (grep of server.py confirms no /api/parties route). The Promise.all wrapper uses .catch(()=>[]) which converts the 404 into an empty array, so the UI shows the 'Koi customer/supplier nahi mila' empty state instead of surfacing the error."
+}

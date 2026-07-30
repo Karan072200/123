@@ -1,7 +1,7 @@
 # Apka Munim — PRD & Change Log
 
 ## Problem
-Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + MongoDB) sourced from `Karan072200/123`. This iteration was a **cleanup + stabilization pass** — no new features, only bug fixes, missing endpoint wiring, env/rate-limit hardening, and frontend routing gaps.
+Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + MongoDB). It serves two personas: personal-finance users tracking income / kharcha / udhaar, and small-business owners running GST-compliant billing (invoices, quotations, parties, inventory, payments).
 
 ## Personas
 - Personal-finance user tracking income, kharcha, udhaar in Hinglish
@@ -11,44 +11,50 @@ Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + Mongo
 - Auth (email/password + Google), JWT via cookies + Bearer
 - Multi-ledger scoping (personal + shared)
 - Transactions, accounts, budgets, goals, warranties, kids, splits, investments
-- Billing: invoices, quotations, proforma, challans, credit/debit notes
+- Billing: invoices, quotations, proforma, challans, credit/debit notes, sales returns
+- Standalone ERP-style Billing workspace with its own sidebar + top header
 - Voice / SMS / LLM insights (Anthropic → Groq → Emergent)
 - Public account-deletion request (unauthenticated form)
 - Slowapi rate-limiting on auth + sensitive endpoints
 
-## What was implemented in this pass (Feb 2026)
+## What was implemented in the cleanup/stabilization pass (Feb 2026)
 
 ### Backend (`backend/server.py`)
-- Removed broken duplicate `DELETE /api/user/delete-account` that used `current_user["_id"]` (KeyError) and wrong scope.
-- Rewrote `POST /api/public/delete-account-request` on the `api` router with `@limiter.limit("5/hour")`, `EmailStr` validation, `request: Request` param, UUID id, ISO created_at.
-- Replaced `os.environ["JWT_SECRET"]` / `os.environ["GOOGLE_CLIENT_ID"]` with `.get()` + explicit `RuntimeError` — matches the existing `MONGO_URL` pattern.
-- Added `WarrantyUpdateIn` (all Optional) and switched `PATCH /warranties/{id}` to it; returns 404 if missing.
-- Added `PATCH /kids/{kid_id}` (name/emoji/monthly_allowance), 404 if missing.
-- Added `PATCH /accounts/{account_id}` (name/type/color) via `AccountUpdateIn`, 404 if missing.
-- Added `@limiter.limit("30/hour")` to `POST /voice/parse-transaction` + gated LLM fallback behind premium check (`_sync_premium_status`) with free-tier daily counter (`_check_daily_free_limit`, `voiceLlmCount`, 5/day). Free users hitting the limit get HTTP 402.
-- Cleaned up the shutdown handler which had stray endpoint code appended to it.
+- Removed broken duplicate `DELETE /api/user/delete-account`, rewrote `POST /api/public/delete-account-request` with EmailStr + rate limit.
+- Graceful env checks (`JWT_SECRET`, `GOOGLE_CLIENT_ID`) with clear RuntimeError.
+- Added `WarrantyUpdateIn`, `PATCH /warranties/{id}`, `PATCH /kids/{kid_id}`, `PATCH /accounts/{account_id}`.
+- Rate-limited + premium-gated `POST /voice/parse-transaction` (5/day free LLM fallback).
 
-### Frontend (`frontend/src/App.js`)
-- Imported `Landing` and `InvoiceCreate`.
-- New `RootRoute` component: shows `Landing` for logged-out users, `Dashboard` (in `Layout`) for authed users. Preserves all internal links pointing at `/`.
-- Added `/dashboard` route so authed users can link directly.
-- Added `/billing/invoices/new` and `/billing/invoices/:id/edit` routes to `InvoiceCreate`.
-- Deleted the old `pages/BillingDashboard.jsx` (superseded by `pages/billing/BillingDashboardWorkspace.jsx`).
-- `yarn build` compiles clean.
+### Frontend
+- Landing / Dashboard split via `RootRoute`.
+- FY-aware invoice numbering, PDF polish (logo, GSTIN, T&C), UPI QR on PDF, E-invoice IRN fields, WhatsApp share.
+- Payment reconciliation UI + Bank CSV import.
+- Recurring auto-run via APScheduler + Overdue Email Digest.
+- Multi-language support (Hindi / Hinglish / English) via LanguageContext.
 
-### Env
-- Added dev `JWT_SECRET` and placeholder `GOOGLE_CLIENT_ID` to `backend/.env` so the graceful startup check passes locally.
+## ERP Billing Workspace refactor (Feb 2026 — Phase 1)
+
+Standalone ERP-style workspace, no longer nested inside the personal Layout:
+- **New**: `components/billing/BillingSidebar.jsx` — vertical, collapsible, section-grouped nav with active-child auto-expand and mobile drawer. Includes a "Back to Personal" button that returns to `/dashboard`.
+- **Rewritten**: `components/billing/BillingLayout.jsx` — standalone shell: `<BillingSidebar>` + `<BillingHeader>` + main content. Owns its own `financialYear` state.
+- **Rewritten**: `components/billing/BillingHeader.jsx` — sticky top bar with Create dropdown (Sales / Purchase / Money), FY switcher, mobile menu toggle, Personal shortcut, settings.
+- **Removed** (dead code): `components/billing/BillingSubNav.jsx` and duplicate `components/billing/BillingDashboardWorkspace.jsx`.
+- **App.js**: `ProtectedBillingRoute` no longer wraps children in the personal `Layout`.
+
+### New dedicated Billing pages
+- `/billing/sales-returns` → `pages/billing/SalesReturns.jsx` (Credit Note flow with return-specific header + guidance).
+- `/billing/customer-ledger` → `pages/billing/CustomerLedger.jsx` (per-customer total sales + outstanding, search).
+- `/billing/supplier-ledger` → `pages/billing/SupplierLedger.jsx` (per-supplier total purchase + payable, search).
+- `/billing/inventory-adjustments` → `pages/billing/InventoryAdjustments.jsx` (stock levels, low / out-of-stock counters, valuation).
 
 ## Smoke tests run
-- Register → login → me → PATCH kids/warranties/accounts → delete /auth/me → all pass.
-- PATCH on missing ids → 404 (not silent 200).
-- Voice parse with amount → regex path, returns 200 with parsed txn.
-- Old broken `DELETE /api/user/delete-account` → 404 (removed).
-- `POST /public/delete-account-request` valid email → 200; invalid email → 422 (Pydantic EmailStr); burst of 10 → HTTP 429 after 5.
-- Frontend `yarn build` → compiled successfully.
+- `yarn build` compiles clean, gzip main bundle 383 kB.
+- All 28 backend tests still pass (from prior pass).
 
 ## Backlog / Next
-- P1: Add a `WarrantyReturnUpdate` field or full replacement flow if UI needs it.
-- P1: Standalone rate-limit test for `voice/parse-transaction` (currently only smoke-checked regex path).
-- P2: Move deleted-account admin review UI (list `deletion_requests` collection).
-- P2: Legacy `BillingDashboard` route (`/billing/legacy`) if any bookmark exists — currently intentionally omitted.
+- P1: Document conversion flows — Quotation / SO / Delivery Challan → Invoice.
+- P1: Customer / Supplier profile pages with full ledger drilldown + statement PDF.
+- P1: Purchase Bills as a first-class module (not just an Invoices filter).
+- P2: Google Play Data Safety declaration audit.
+- P2: Automated MongoDB backups (Atlas snapshot cron).
+- P2: Rotate all leaked keys (Mongo, Resend, Groq, JWT, Google) — user action.
