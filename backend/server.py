@@ -4522,7 +4522,7 @@ def _score_match(payment: dict, invoice: dict) -> int:
     payer = (payment.get("payer_name") or "").lower()
     upi = (payment.get("payer_upi") or "").lower()
     cust = (invoice.get("customer_name") or "").lower()
-    if payer and cust and payer in cust or cust in payer:
+    if payer and cust and (payer in cust or cust in payer):
         score += 5
     if upi and cust and cust.split()[0] in upi:
         score += 3
