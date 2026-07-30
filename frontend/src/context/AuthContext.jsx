@@ -44,6 +44,18 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loginWithPin = async (email, pin) => {
+    await http.post("/auth/pin/verify", { email, pin });
+    await refresh();
+    return true;
+  };
+
+  const googleLogin = async (idToken) => {
+    await http.post("/auth/google", { id_token: idToken });
+    await refresh();
+    return true;
+  };
+
   const logout = async () => {
     try {
       await http.post("/auth/logout");
@@ -64,7 +76,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthCtx.Provider value={{ user, login, register, logout, error, setCurrency, refresh, switchLedger }}>
+    <AuthCtx.Provider value={{ user, login, register, logout, loginWithPin, googleLogin, error, setCurrency, refresh, switchLedger }}>
       {children}
     </AuthCtx.Provider>
   );

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Eye, EyeOff, Lock, Mail, KeyRound } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
+import { ShieldCheck, Eye, EyeOff, Lock, Mail, KeyRound, FileText, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Login() {
@@ -23,11 +24,12 @@ export default function Login() {
     }
     try {
       setLoading(true);
-      await login(email, password);
+      const ok = await login(email, password);
+      if (ok === false) throw new Error('Login failed. Check credentials.');
       toast.success('Welcome back!');
       navigate('/');
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Login failed. Please check credentials.');
+      toast.error(err?.response?.data?.detail || err?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -35,14 +37,18 @@ export default function Login() {
 
   const handlePinLogin = async (e) => {
     e.preventDefault();
+    if (!email) {
+      toast.error('Please enter your registered email');
+      return;
+    }
     if (!pin || pin.length < 4) {
-      toast.error('Please enter a valid PIN');
+      toast.error('Please enter a valid PIN (min 4 digits)');
       return;
     }
     try {
       setLoading(true);
-      await loginWithPin(pin);
-      toast.success('Access Granted via PIN');
+      await loginWithPin(email, pin);
+      toast.success('Access granted via PIN');
       navigate('/');
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Invalid PIN');
@@ -51,74 +57,98 @@ export default function Login() {
     }
   };
 
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      setLoading(true);
+      await googleLogin(credentialResponse.credential);
+      toast.success('Signed in with Google');
+      navigate('/');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2">
-        
-        {/* Left Branding Panel */}
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2 border border-slate-200 dark:border-slate-800">
+
+        {/* LEFT — Branding & Benefits */}
         <div className="hidden md:flex flex-col justify-between p-10 bg-gradient-to-br from-emerald-800 via-emerald-900 to-slate-900 text-white">
           <div>
-            <div className="flex items-center space-x-3 mb-8">
-              <img src="/apkamunim-playstore-icon-512.png" alt="Apka Munim" className="w-10 h-10 rounded-xl bg-white p-1" />
-              <span className="font-bold text-2xl tracking-tight">Apka Munim</span>
+            <div className="flex items-center space-x-3 mb-10">
+              <img src="/apkamunim-playstore-icon-512.png" alt="Apka Munim" className="w-11 h-11 rounded-xl bg-white p-1" />
+              <div>
+                <div className="font-extrabold text-2xl tracking-tight">Apka Munim</div>
+                <div className="text-[11px] text-emerald-300 uppercase tracking-wider">Accounting · Billing · GST</div>
+              </div>
             </div>
-            
-            <h1 className="text-3xl font-extrabold leading-tight mb-6">
-              Complete Accounting & Billing Workspace
+
+            <h1 className="text-3xl font-extrabold leading-tight mb-8">
+              Aapka business, aapke haath mein.
             </h1>
 
             <div className="space-y-4 text-emerald-100 text-sm font-medium">
               <div className="flex items-start space-x-3">
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Track every transaction and ledger balance with precision</span>
+                <span>Track every transaction — Aaya, Gaya, Udhaar</span>
+              </div>
+              <div className="flex items-start space-x-3">
+                <FileText className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <span>Create GST-ready professional invoices, quotations, challans</span>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Users className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <span>Manage customers, suppliers, outstanding &amp; ledgers</span>
               </div>
               <div className="flex items-start space-x-3">
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Create GST compliant professional invoices & challans</span>
+                <span>Know your business numbers with real-time reports</span>
               </div>
             </div>
           </div>
 
-          <p className="text-xs text-emerald-300">
-            © 2026 Apka Munim. Safe & Encrypted Accounting.
-          </p>
+          <p className="text-[11px] text-emerald-300">© 2026 Apka Munim. Encrypted &amp; secure.</p>
         </div>
 
-        {/* Right Form Panel */}
+        {/* RIGHT — Login form */}
         <div className="p-8 sm:p-10 flex flex-col justify-center bg-white dark:bg-slate-900">
           <div className="md:hidden flex items-center space-x-2 mb-6">
             <img src="/apkamunim-playstore-icon-512.png" alt="Apka Munim" className="w-8 h-8 rounded-lg" />
             <span className="font-bold text-xl text-emerald-800 dark:text-emerald-400">Apka Munim</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Welcome Back</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Welcome back</h2>
           <p className="text-sm text-slate-500 mb-6">Log in to manage your accounting workspace.</p>
 
           <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 mb-6">
             <button
               type="button"
               onClick={() => setMode('email')}
+              data-testid="login-mode-email"
               className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                 mode === 'email' ? 'bg-white dark:bg-slate-700 shadow text-emerald-700 dark:text-white' : 'text-slate-500'
               }`}
             >
-              Email Login
+              Email + Password
             </button>
             <button
               type="button"
               onClick={() => setMode('pin')}
+              data-testid="login-mode-pin"
               className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                 mode === 'pin' ? 'bg-white dark:bg-slate-700 shadow text-emerald-700 dark:text-white' : 'text-slate-500'
               }`}
             >
-              Quick PIN Login
+              Quick PIN
             </button>
           </div>
 
           {mode === 'email' ? (
-            <form onSubmit={handleEmailLogin} className="space-y-4">
+            <form onSubmit={handleEmailLogin} className="space-y-4" data-testid="login-form-email">
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Email address</label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
@@ -127,6 +157,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@business.com"
                     required
+                    data-testid="login-email-input"
                     className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -135,7 +166,7 @@ export default function Login() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Password</label>
-                  <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:underline">
+                  <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:underline" data-testid="login-forgot-link">
                     Forgot?
                   </Link>
                 </div>
@@ -147,12 +178,15 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
+                    data-testid="login-password-input"
                     className="w-full pl-9 pr-10 py-2 text-sm border rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    aria-label="Toggle password visibility"
+                    data-testid="login-password-toggle"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -162,13 +196,29 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
+                data-testid="login-submit-btn"
                 className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg text-sm transition-colors shadow-md disabled:opacity-50"
               >
-                {loading ? 'Authenticating...' : 'Sign In'}
+                {loading ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
           ) : (
-            <form onSubmit={handlePinLogin} className="space-y-4">
+            <form onSubmit={handlePinLogin} className="space-y-4" data-testid="login-form-pin">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Email address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    required
+                    data-testid="login-pin-email-input"
+                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Security PIN</label>
                 <div className="relative">
@@ -176,11 +226,13 @@ export default function Login() {
                   <input
                     type="password"
                     maxLength={6}
+                    inputMode="numeric"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    placeholder="Enter PIN"
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Enter 4-6 digit PIN"
                     required
-                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    data-testid="login-pin-input"
+                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none tracking-widest"
                   />
                 </div>
               </div>
@@ -188,39 +240,36 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
+                data-testid="login-pin-submit-btn"
                 className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg text-sm transition-colors shadow-md disabled:opacity-50"
               >
-                {loading ? 'Verifying PIN...' : 'Verify PIN & Enter'}
+                {loading ? 'Verifying…' : 'Verify PIN & enter'}
               </button>
             </form>
           )}
 
-          {googleLogin && (
-            <div className="mt-6">
-              <div className="relative mb-4">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700" /></div>
-                <div className="relative flex justify-center text-xs text-slate-400"><span className="bg-white dark:bg-slate-900 px-2">OR</span></div>
-              </div>
-              <button
-                type="button"
-                onClick={googleLogin}
-                className="w-full flex items-center justify-center space-x-2 py-2 px-4 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Continue with Google</span>
-              </button>
+          <div className="mt-6">
+            <div className="relative mb-4">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700" /></div>
+              <div className="relative flex justify-center text-xs text-slate-400"><span className="bg-white dark:bg-slate-900 px-2">OR CONTINUE WITH</span></div>
             </div>
-          )}
+            <div className="flex justify-center" data-testid="login-google-wrapper">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => toast.error('Google sign-in was cancelled')}
+                useOneTap={false}
+                theme="outline"
+                size="large"
+                text="signin_with"
+                shape="rectangular"
+              />
+            </div>
+          </div>
 
           <p className="mt-8 text-center text-xs text-slate-500">
             Don't have an account?{' '}
-            <Link to="/register" className="font-semibold text-emerald-600 hover:underline">
-              Create Free Account
+            <Link to="/register" className="font-semibold text-emerald-600 hover:underline" data-testid="login-register-link">
+              Create free account
             </Link>
           </p>
         </div>

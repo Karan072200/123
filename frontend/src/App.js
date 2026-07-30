@@ -54,7 +54,13 @@ function ProtectedBillingRoute({ children }) {
   const { user } = useAuth();
   if (user === null) return null; // still checking session via /auth/me
   if (user === false) return <Navigate to="/login" replace />;
-  return <BillingLayout>{children}</BillingLayout>;
+  // Billing pages sit inside the same primary Layout so Dashboard/Transactions/Billing
+  // remain visible on every billing screen. BillingLayout only adds the secondary nav.
+  return (
+    <Layout>
+      <BillingLayout>{children}</BillingLayout>
+    </Layout>
+  );
 }
 
 function RootRoute() {

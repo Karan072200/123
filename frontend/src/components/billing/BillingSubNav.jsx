@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -7,169 +7,168 @@ import {
   FileText,
   ShoppingBag,
   CreditCard,
-  TrendingDown,
-  FileCheck,
   BarChart3,
-  ChevronDown
+  Plus,
+  ChevronDown,
+  Receipt,
+  FileCheck,
+  RotateCcw,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
+const tabBase =
+  "flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-colors";
+const tabIdle =
+  "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800";
+const tabActive =
+  "bg-emerald-700 text-white shadow-sm";
+
+function Tab({ to, end, icon: Icon, label }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => `${tabBase} ${isActive ? tabActive : tabIdle}`}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span>{label}</span>
+    </NavLink>
+  );
+}
+
+function isGroupActive(pathname, prefixes) {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));
+}
+
 export default function BillingSubNav() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const salesActive = isGroupActive(location.pathname + location.search, [
+    "/billing/invoices",
+    "/billing/quotations",
+    "/billing/proforma",
+    "/billing/challans",
+    "/billing/sales-orders",
+    "/billing/credit-notes",
+  ]);
+  const purchaseActive = isGroupActive(location.pathname + location.search, [
+    "/billing/purchase-orders",
+    "/billing/debit-notes",
+  ]);
+  const reportsActive = isGroupActive(location.pathname + location.search, [
+    "/billing/reports",
+  ]);
+
+  const go = (path) => navigate(path);
 
   return (
-    <div className="bg-[#2A4F4F] text-white text-xs border-b border-emerald-950 px-4 shadow-md">
-      <div className="max-w-7xl mx-auto flex items-center space-x-1 sm:space-x-4 overflow-x-auto scrollbar-none py-1.5">
-        
-        {/* Dashboard */}
-        <NavLink
-          to="/billing"
-          end
-          className={({ isActive }) =>
-            `flex items-center space-x-1.5 px-3 py-1.5 rounded font-semibold transition-colors ${
-              isActive ? "bg-emerald-800 text-white shadow" : "text-emerald-100 hover:bg-emerald-800/60"
-            }`
-          }
-        >
-          <LayoutDashboard className="w-3.5 h-3.5" />
-          <span>Dashboard</span>
-        </NavLink>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm">
+      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none px-2 py-1.5">
+        <Tab to="/billing" end icon={LayoutDashboard} label="Overview" />
 
-        {/* Customer / Vendor */}
+        {/* SALES dropdown */}
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
-            <Users className="w-3.5 h-3.5" />
-            <span>Customer / Vendor</span>
+          <DropdownMenuTrigger
+            className={`${tabBase} ${salesActive ? tabActive : tabIdle} focus:outline-none`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Sales</span>
             <ChevronDown className="w-3 h-3 opacity-70" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/parties?type=customer">Customers & Vendors</NavLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/parties?tab=groups">Customer Groups</NavLink>
-            </DropdownMenuItem>
+          <DropdownMenuContent align="start" className="text-xs">
+            <DropdownMenuLabel>Sales Documents</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/invoices")}>Sales Invoices</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/quotations")}>Quotations</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/proforma")}>Proforma Invoices</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/challans")}>Delivery Challans</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/sales-orders")}>Sales Orders</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/credit-notes")}>Credit Notes</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Products / Services */}
+        {/* PURCHASE dropdown */}
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
-            <Package className="w-3.5 h-3.5" />
-            <span>Products / Inventory</span>
+          <DropdownMenuTrigger
+            className={`${tabBase} ${purchaseActive ? tabActive : tabIdle} focus:outline-none`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>Purchase</span>
             <ChevronDown className="w-3 h-3 opacity-70" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/inventory">All Products & Services</NavLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/inventory?filter=low-stock">Low Stock Report</NavLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/inventory?tab=barcodes">Barcode Generator</NavLink>
-            </DropdownMenuItem>
+          <DropdownMenuContent align="start" className="text-xs">
+            <DropdownMenuLabel>Purchase Documents</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/purchase-orders")}>Purchase Orders</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/debit-notes")}>Debit Notes</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Sale Invoice */}
-        <NavLink
-          to="/billing/invoices?type=sale"
-          className={({ isActive }) =>
-            `flex items-center space-x-1.5 px-3 py-1.5 rounded font-semibold transition-colors ${
-              isActive ? "bg-emerald-800 text-white shadow" : "text-emerald-100 hover:bg-emerald-800/60"
-            }`
-          }
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>Sale Invoice</span>
-        </NavLink>
+        <Tab to="/billing/parties" icon={Users} label="Parties" />
+        <Tab to="/billing/inventory" icon={Package} label="Inventory" />
+        <Tab to="/billing/outstanding" icon={Receipt} label="Outstanding" />
+        <Tab to="/billing/ledgers" icon={FileCheck} label="Ledgers" />
+        <Tab to="/billing/payments" icon={CreditCard} label="Payments" />
 
-        {/* Purchase Invoice */}
-        <NavLink
-          to="/billing/invoices?type=purchase"
-          className={({ isActive }) =>
-            `flex items-center space-x-1.5 px-3 py-1.5 rounded font-semibold transition-colors ${
-              isActive ? "bg-emerald-800 text-white shadow" : "text-emerald-100 hover:bg-emerald-800/60"
-            }`
-          }
-        >
-          <ShoppingBag className="w-3.5 h-3.5" />
-          <span>Purchase Invoice</span>
-        </NavLink>
-
-        {/* Payment */}
+        {/* REPORTS dropdown */}
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>Payments</span>
-            <ChevronDown className="w-3 h-3 opacity-70" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/payments?type=received">Inward Payment (Sales)</NavLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/payments?type=made">Outward Payment (Purchase)</NavLink>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Expense / Income */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
-            <TrendingDown className="w-3.5 h-3.5" />
-            <span>Expense / Income</span>
-            <ChevronDown className="w-3 h-3 opacity-70" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/expenses">Daily Expenses</NavLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <NavLink to="/billing/income">Other Income</NavLink>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Other Documents */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
-            <FileCheck className="w-3.5 h-3.5" />
-            <span>Other Documents</span>
-            <ChevronDown className="w-3 h-3 opacity-70" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild><NavLink to="/billing/quotations">Quotation</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/proforma">Proforma Invoice</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/challans">Delivery Challan</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/sales-orders">Sale Order</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/purchase-orders">Purchase Order</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/credit-notes">Credit Note</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/debit-notes">Debit Note</NavLink></DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Reports & GST */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center space-x-1 px-3 py-1.5 text-emerald-100 hover:bg-emerald-800/60 rounded font-semibold focus:outline-none">
+          <DropdownMenuTrigger
+            className={`${tabBase} ${reportsActive ? tabActive : tabIdle} focus:outline-none`}
+          >
             <BarChart3 className="w-3.5 h-3.5" />
-            <span>GST & Reports</span>
+            <span>Reports</span>
             <ChevronDown className="w-3 h-3 opacity-70" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-slate-900 text-slate-200 border-slate-700 text-xs">
-            <DropdownMenuItem asChild><NavLink to="/billing/reports?type=sales">Sales Report</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/reports?type=purchase">Purchase Report</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/reports?type=gst">GSTR-1 / GSTR-3B Summary</NavLink></DropdownMenuItem>
-            <DropdownMenuItem asChild><NavLink to="/billing/reports?type=pnl">Profit & Loss Report</NavLink></DropdownMenuItem>
+          <DropdownMenuContent align="start" className="text-xs">
+            <DropdownMenuLabel>Sales</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=sales")}>Sales Report</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=outstanding")}>Outstanding</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Purchase</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=purchase")}>Purchase Report</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Accounting</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=pnl")}>Profit &amp; Loss</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=daybook")}>Day Book</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=stock")}>Stock Report</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/reports?type=gst")}>GST Summary</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <div className="flex-1" />
+
+        {/* + Create */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm focus:outline-none">
+            <Plus className="w-3.5 h-3.5" />
+            <span>Create</span>
+            <ChevronDown className="w-3 h-3 opacity-90" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="text-xs w-56">
+            <DropdownMenuLabel>Sales</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=tax")}>Sale Invoice</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=gst")}>GST Invoice</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=quotation")}>Quotation</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=proforma")}>Proforma Invoice</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=challan")}>Delivery Challan</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=sales-order")}>Sale Order</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=credit")}>Credit Note</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Purchase</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=purchase-order")}>Purchase Order</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoices/new?type=debit")}>Debit Note</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Payments</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => go("/billing/payments?type=received")}>Receive Payment</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/payments?type=made")}>Make Payment</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
