@@ -11,6 +11,7 @@ import VibeCard from "@/components/VibeCard";
 import NetWorthCard from "@/components/NetWorthCard";
 import BadgesCard from "@/components/BadgesCard";
 import EmergencyFundCard from "@/components/EmergencyFundCard";
+import OverdueDigestCard from "@/components/OverdueDigestCard";
 import {
   TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownRight, Plus, MessageSquare,
 } from "lucide-react";
@@ -76,6 +77,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      <OverdueDigestCard />
       <AdSlot />
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>

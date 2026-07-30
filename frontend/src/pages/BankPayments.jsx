@@ -13,8 +13,10 @@ export default function BankPayments() {
   const cur = user?.currency || "INR";
   const nav = useNavigate();
   const [rows, setRows] = useState([]);
+  const [health, setHealth] = useState([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState({
     amount: "",
     reference: "",
@@ -28,11 +30,31 @@ export default function BankPayments() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await http.get("/billing/bank-payments");
-      setRows(Array.isArray(data) ? data : []);
+      const [payments, healthRows] = await Promise.all([
+        http.get("/billing/bank-payments").then(r => r.data).catch(() => []),
+        http.get("/billing/webhook/health").then(r => r.data).catch(() => []),
+      ]);
+      setRows(Array.isArray(payments) ? payments : []);
+      setHealth(Array.isArray(healthRows) ? healthRows : []);
     } finally {
       setLoading(false);
     }
+  };
+
+  const importCsv = async (file) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) return toast.error("File 4MB se badi hai");
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const { data } = await http.post("/billing/bank-payments/import-csv", text, {
+        headers: { "Content-Type": "text/csv" },
+      });
+      toast.success(`${data.imported} payments imported. Ab Auto Match dabao.`);
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Import failed");
+    } finally { setImporting(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -105,6 +127,62 @@ export default function BankPayments() {
           <PlayCircle className="w-4 h-4 mr-1" />
           {running ? "Matching…" : "Auto Match"}
         </Button>
+      </div>
+
+      {/* Provider health strip */}
+      {health.length > 0 && (
+        <div className="bg-white border border-[#E7E5DF] rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-[#2A4F4F]" />
+            <h3 className="font-semibold text-sm">Webhook Health</h3>
+            <span className="text-[10px] text-[#78716C]">(healthy = seen in last 48 h)</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {health.map((h) => {
+              const dot = h.count === 0
+                ? "bg-slate-300"
+                : h.healthy
+                  ? "bg-emerald-500"
+                  : "bg-rose-500";
+              const hint = h.count === 0
+                ? "Never received"
+                : h.healthy
+                  ? `Last ${h.hours_since}h ago`
+                  : `Silent for ${h.hours_since}h — check config`;
+              return (
+                <div key={h.provider} data-testid={`health-${h.provider}`}
+                  className="flex items-center gap-2 p-2 border border-[#E7E5DF] rounded-md text-xs">
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  <div className="min-w-0">
+                    <div className="font-semibold capitalize truncate">{h.provider.replace("-", " ")}</div>
+                    <div className="text-[10px] text-[#78716C] truncate">{hint} · {h.count}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* CSV import strip */}
+      <div className="bg-white border border-[#E7E5DF] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4 text-[#2A4F4F]" />
+            <h3 className="font-semibold text-sm">Bulk Import Bank Statement</h3>
+          </div>
+          <p className="text-xs text-[#78716C] mt-0.5">
+            HDFC / ICICI / Axis CSV drop karo — credit rows auto-import ho jaayenge.
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-[#2A4F4F] text-[#2A4F4F] hover:bg-[#2A4F4F]/5 cursor-pointer text-xs font-semibold">
+          <Upload className="w-3.5 h-3.5" />
+          {importing ? "Importing…" : "Upload CSV"}
+          <input type="file" accept=".csv,text/csv,text/plain"
+            data-testid="csv-import-input"
+            onChange={(e) => importCsv(e.target.files?.[0])}
+            className="hidden" disabled={importing} />
+        </label>
       </div>
 
       <div className="bg-white border border-[#E7E5DF] rounded-xl p-4 space-y-3">

@@ -5100,6 +5100,136 @@ async def preview_overdue_digest(user=Depends(get_current_user)):
     return {"html": html, "count": len(overdue), "recipient": user["email"]}
 
 
+# ----- Bank statement CSV import (HDFC / ICICI / generic) -----
+def _parse_amount(cell) -> float:
+    if cell is None: return 0.0
+    s = str(cell).replace(",", "").replace("₹", "").strip()
+    if not s or s.lower() in {"-", "nil", "n/a"}: return 0.0
+    try: return float(s)
+    except Exception: return 0.0
+
+
+def _extract_credit_rows_from_csv(text: str) -> list:
+    """Return list of {amount, reference, date} for credit-only rows across common Indian bank formats."""
+    import csv as _csv, io as _io
+    rows = []
+    reader = _csv.reader(_io.StringIO(text))
+    header = None
+    header_lc = None
+    for raw in reader:
+        row = [c.strip() for c in raw]
+        if not any(row): continue
+        joined = " ".join(row).lower()
+        # First data-looking row with words like 'credit'/'deposit'/'narration' → header
+        if header is None:
+            if any(k in joined for k in ("credit", "deposit", "narration", "particulars", "transaction remarks", "description")):
+                header = row
+                header_lc = [c.lower() for c in row]
+            continue
+        # Map columns
+        def col(*keys):
+            for k in keys:
+                for i, h in enumerate(header_lc):
+                    if k in h and i < len(row):
+                        return row[i]
+            return ""
+        credit_raw = col("credit amount", "deposit amount", "credit", "deposit", "cr amount")
+        debit_raw = col("debit amount", "withdrawal amount", "debit", "withdrawal", "dr amount")
+        amt = _parse_amount(credit_raw)
+        if amt <= 0:
+            # Some banks put +/− in a single Amount column
+            single = col("amount")
+            v = _parse_amount(single)
+            if v > 0 and _parse_amount(debit_raw) == 0:
+                amt = v
+        if amt <= 0:
+            continue
+        ref = col("narration", "particulars", "transaction remarks", "description", "chq", "ref.no", "reference")
+        date_v = col("transaction date", "value dt", "value date", "date", "txn date")
+        rows.append({"amount": amt, "reference": ref[:200], "date": date_v[:32]})
+    return rows
+
+
+@api.post("/billing/bank-payments/import-csv")
+async def import_bank_statement_csv(request: Request, user=Depends(get_current_user)):
+    """
+    Accept a raw CSV upload (text/csv or text/plain). Parse HDFC/ICICI style
+    statements, extract credit-only rows, insert into bank_payments, and
+    return the count. The follow-up reconcile step matches to invoices.
+    """
+    try:
+        raw = (await request.body()).decode("utf-8", errors="replace")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad file encoding")
+    if not raw or len(raw) < 20:
+        raise HTTPException(status_code=400, detail="Empty CSV")
+    if len(raw) > 4_000_000:
+        raise HTTPException(status_code=413, detail="File too large (max 4 MB)")
+
+    parsed = _extract_credit_rows_from_csv(raw)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="No credit rows found. Ensure the CSV has Credit/Deposit column headers.")
+
+    owner = user["current_ledger_id"]
+    now = datetime.now(timezone.utc)
+    docs = []
+    for r in parsed:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "owner_id": owner,
+            "amount": float(r["amount"]),
+            "reference": r["reference"] or "",
+            "payer_name": None,
+            "payer_upi": None,
+            "payment_mode": "bank",
+            "payment_date": r["date"] or now.isoformat(),
+            "notes": "CSV import",
+            "status": "unmatched",
+            "matched_invoice_id": None,
+            "matched_invoice_number": None,
+            "created_at": now.isoformat(),
+            "source": "csv-import",
+        })
+    if docs:
+        await db.bank_payments.insert_many(docs)
+    return {"imported": len(docs), "hint": "Now click Auto Match to reconcile these to open invoices."}
+
+
+# ----- Webhook health per provider -----
+@api.get("/billing/webhook/health")
+async def webhook_health(user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    providers = ["webhook", "razorpay", "cashfree", "phonepe", "csv-import"]
+    pipeline = [
+        {"$match": {"owner_id": owner, "source": {"$in": providers}}},
+        {"$group": {"_id": "$source", "last": {"$max": "$created_at"}, "count": {"$sum": 1}}},
+    ]
+    by_source = {}
+    async for row in db.bank_payments.aggregate(pipeline):
+        by_source[row["_id"]] = {"last": row["last"], "count": row["count"]}
+
+    now = datetime.now(timezone.utc)
+    out = []
+    for src in providers:
+        info = by_source.get(src)
+        if not info:
+            out.append({"provider": src, "last": None, "hours_since": None, "count": 0, "healthy": None})
+            continue
+        try:
+            last_dt = datetime.fromisoformat(str(info["last"]).replace("Z", "+00:00"))
+            hrs = round((now - last_dt).total_seconds() / 3600, 1)
+        except Exception:
+            hrs = None
+        out.append({
+            "provider": src,
+            "last": info["last"],
+            "hours_since": hrs,
+            "count": info["count"],
+            "healthy": (hrs is not None and hrs <= 48),
+        })
+    return out
+
+
 # ----- Public account deletion request (unauthenticated form) -----
 import re as _re
 

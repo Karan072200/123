@@ -486,8 +486,22 @@ const LangCtx = createContext({ lang: "en", setLang: () => {}, t: (k) => k });
 
 export function LanguageProvider({ children }) {
   const [lang, setLangState] = useState(() => {
-    try { return localStorage.getItem("am_lang") || "en"; }
-    catch { return "en"; }
+    try {
+      const stored = localStorage.getItem("am_lang");
+      if (stored && DICTS[stored]) return stored;
+    } catch {}
+    // Auto-detect from browser locale
+    try {
+      const raw = (navigator.language || "en").toLowerCase();
+      if (raw === "en-in") return "hin";
+      if (raw.startsWith("hi")) return "hi";
+      if (raw.startsWith("gu")) return "gu";
+      if (raw.startsWith("mr")) return "mr";
+      if (raw.startsWith("ta")) return "ta";
+      if (raw.startsWith("te")) return "te";
+      if (raw.startsWith("bn")) return "bn";
+    } catch {}
+    return "en";
   });
 
   const setLang = (l) => {
