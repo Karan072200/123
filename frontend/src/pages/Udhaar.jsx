@@ -243,6 +243,21 @@ export default function Udhaar() {
           >
             <Bell className="w-4 h-4 mr-1" /> Remind All on WhatsApp
           </Button>
+          <Button
+            onClick={async () => {
+              try {
+                const { data } = await http.post("/billing/overdue-digest/send");
+                toast.success(`Digest emailed to ${data.recipient} (${data.count} invoices)`);
+              } catch (e) {
+                toast.error(e?.response?.data?.detail || "Digest send failed");
+              }
+            }}
+            data-testid="udhaar-email-digest-btn"
+            variant="outline"
+            className="border-[#2A4F4F] text-[#2A4F4F] hover:bg-[#2A4F4F]/5 rounded-full"
+          >
+            <Bell className="w-4 h-4 mr-1" /> Email Digest
+          </Button>
         </div>
       )}
 

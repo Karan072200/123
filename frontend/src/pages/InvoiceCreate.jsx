@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail, Edit3, ShieldCheck, Repeat } from "lucide-react";
+import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail, Edit3, ShieldCheck, Repeat, BookMarked } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 const INVOICE_TYPES = [
@@ -60,6 +60,66 @@ export default function InvoiceCreate() {
     irn_qr: "",
   });
   const [recurring, setRecurring] = useState({ enabled: false, day_of_month: 1 });
+  const [templates, setTemplates] = useState([]);
+  const [selectedTpl, setSelectedTpl] = useState("");
+
+  useEffect(() => {
+    if (isView) return;
+    http.get("/billing/invoice-templates").then((r) => setTemplates(r.data || [])).catch(() => {});
+  }, [isView]);
+
+  // Apply a template into the form
+  const applyTemplate = (tplId) => {
+    const t = templates.find((x) => x.id === tplId);
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      invoice_type: t.invoice_type || f.invoice_type,
+      items: (t.items || []).map((it) => ({ ...emptyItem(), ...it })),
+      discount_amount: t.discount_amount || 0,
+      shipping: t.shipping || 0,
+      gst_mode: t.gst_mode || f.gst_mode,
+      payment_mode: t.payment_mode || f.payment_mode,
+      notes: t.notes || f.notes,
+      terms: t.terms || f.terms,
+    }));
+    setSelectedTpl(tplId);
+    toast.success(`Template "${t.name}" loaded`);
+  };
+
+  // If user landed here via "Use Template" from templates page
+  useEffect(() => {
+    if (isView || isEdit) return;
+    const pending = sessionStorage.getItem("am_use_template_id");
+    if (pending && templates.length > 0) {
+      applyTemplate(pending);
+      sessionStorage.removeItem("am_use_template_id");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates.length]);
+
+  const saveAsTemplate = async () => {
+    const name = window.prompt("Template name? (e.g. AMC Contract 2026)");
+    if (!name || !name.trim()) return;
+    try {
+      await http.post("/billing/invoice-templates", {
+        name: name.trim(),
+        invoice_type: form.invoice_type,
+        items: form.items,
+        discount_amount: Number(form.discount_amount || 0),
+        shipping: Number(form.shipping || 0),
+        gst_mode: form.gst_mode,
+        payment_mode: form.payment_mode,
+        notes: form.notes,
+        terms: form.terms,
+      });
+      toast.success(`Template "${name.trim()}" saved`);
+      const { data } = await http.get("/billing/invoice-templates");
+      setTemplates(data || []);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Save failed");
+    }
+  };
 
   useEffect(() => {
     if (isView) {
@@ -457,6 +517,35 @@ export default function InvoiceCreate() {
           <Save className="w-4 h-4 mr-1" /> {saving ? "Saving..." : (isEdit ? "Update Invoice" : "Save Invoice")}
         </Button>
       </div>
+
+      {/* Templates bar (create-mode only) */}
+      {!isView && !isEdit && (
+        <div className="bg-white border border-[#E7E5DF] rounded-xl p-3 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+            <BookMarked className="w-4 h-4 text-[#2A4F4F]" />
+            <select
+              value={selectedTpl}
+              onChange={(e) => applyTemplate(e.target.value)}
+              data-testid="invoice-load-template"
+              className="h-9 px-2 border border-[#E7E5DF] rounded-md bg-white text-sm flex-1"
+            >
+              <option value="">Load from template…</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={saveAsTemplate}
+            data-testid="invoice-save-template-btn"
+            className="border-[#2A4F4F] text-[#2A4F4F] hover:bg-[#2A4F4F]/5"
+          >
+            <BookMarked className="w-4 h-4 mr-1" /> Save as Template
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-white border border-[#E7E5DF] rounded-xl p-4 space-y-3">

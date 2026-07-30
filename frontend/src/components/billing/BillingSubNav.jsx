@@ -111,6 +111,7 @@ export default function BillingSubNav() {
             <DropdownMenuItem onClick={() => go("/billing/credit-notes")}>Credit Notes</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => go("/billing/recurring-invoices")}>Recurring Invoices</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/billing/invoice-templates")}>Invoice Templates</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -152,6 +153,7 @@ export default function BillingSubNav() {
         <Tab to="/billing/outstanding" icon={Receipt} label="Outstanding" />
         <Tab to="/billing/ledgers" icon={FileCheck} label="Ledgers" />
         <Tab to="/billing/payments" icon={CreditCard} label="Payments" />
+        <Tab to="/billing/bank-payments" icon={CreditCard} label="Bank Match" />
 
         {/* EXPENSES & INCOME dropdown */}
         <DropdownMenu>

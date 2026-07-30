@@ -1027,6 +1027,12 @@ async def reset_password(body: ResetPasswordIn, response: Response):
 @api.get("/auth/me")
 async def me(user=Depends(get_current_user)):
     premium = await _sync_premium_status(user)
+    # Fire-and-forget: auto-generate any due recurring invoices at most once/day
+    try:
+        import asyncio as _asyncio
+        _asyncio.create_task(_auto_run_recurring_if_due(user))
+    except Exception:
+        pass
     return {
         "id": user["id"], "email": user["email"], "name": user["name"],
         "currency": user.get("currency", "INR"),
@@ -4272,6 +4278,7 @@ async def export_excel(month: Optional[str] = None, user=Depends(require_premium
 
 
 # ----- Recurring Invoice Templates -----
+# ----- Recurring Invoice Templates -----
 class RecurringInvoiceIn(BaseModel):
     invoice_type: str = "tax"
     customer_id: Optional[str] = None
@@ -4408,6 +4415,404 @@ async def run_recurring_invoices(user=Depends(get_current_user)):
         )
         generated.append({"template_id": t["id"], "invoice_id": inv_id, "invoice_number": inv_no})
     return {"generated": generated, "count": len(generated)}
+
+
+# ----- Invoice Templates (named presets: "AMC Contract 2026", etc.) -----
+class InvoiceTemplateIn(BaseModel):
+    name: str
+    invoice_type: str = "tax"
+    items: List[InvoiceItemIn]
+    discount_amount: Optional[float] = 0
+    shipping: Optional[float] = 0
+    gst_mode: str = "exclusive"
+    payment_mode: Optional[str] = "cash"
+    notes: Optional[str] = None
+    terms: Optional[str] = None
+
+
+@api.get("/billing/invoice-templates")
+async def list_invoice_templates(user=Depends(get_current_user)):
+    return await db.invoice_templates.find(
+        {"owner_id": user["current_ledger_id"]}, {"_id": 0}
+    ).sort("name", 1).to_list(200)
+
+
+@api.post("/billing/invoice-templates")
+async def create_invoice_template(body: InvoiceTemplateIn, user=Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["current_ledger_id"],
+        **body.dict(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    doc["items"] = [it if isinstance(it, dict) else it.dict() for it in doc["items"]]
+    await db.invoice_templates.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/billing/invoice-templates/{template_id}")
+async def delete_invoice_template(template_id: str, user=Depends(get_current_user)):
+    await db.invoice_templates.delete_one(
+        {"id": template_id, "owner_id": user["current_ledger_id"]}
+    )
+    return {"ok": True}
+
+
+# ----- Bank Payments + Auto Reconciliation -----
+class BankPaymentIn(BaseModel):
+    amount: float = Field(gt=0)
+    reference: Optional[str] = None  # UTR, UPI ref, description
+    payer_name: Optional[str] = None
+    payer_upi: Optional[str] = None
+    payment_date: Optional[str] = None
+    payment_mode: str = "upi"
+    notes: Optional[str] = None
+
+
+@api.get("/billing/bank-payments")
+async def list_bank_payments(user=Depends(get_current_user)):
+    return await db.bank_payments.find(
+        {"owner_id": user["current_ledger_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+
+
+@api.post("/billing/bank-payments")
+async def create_bank_payment(body: BankPaymentIn, user=Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["current_ledger_id"],
+        **body.dict(),
+        "payment_date": body.payment_date or now.isoformat(),
+        "status": "unmatched",
+        "matched_invoice_id": None,
+        "matched_invoice_number": None,
+        "created_at": now.isoformat(),
+    }
+    await db.bank_payments.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/billing/bank-payments/{payment_id}")
+async def delete_bank_payment(payment_id: str, user=Depends(get_current_user)):
+    await db.bank_payments.delete_one(
+        {"id": payment_id, "owner_id": user["current_ledger_id"]}
+    )
+    return {"ok": True}
+
+
+def _score_match(payment: dict, invoice: dict) -> int:
+    """Return a heuristic match score for an incoming payment vs an open invoice."""
+    score = 0
+    ref = (payment.get("reference") or "").lower()
+    inv_no = str(invoice.get("invoice_number") or "").lower()
+    # Strong: invoice number appears in reference
+    if inv_no and inv_no.replace("/", "").replace("-", "") in ref.replace("/", "").replace("-", ""):
+        score += 60
+    # Exact balance-due match (paise-precision)
+    balance = round(float(invoice.get("balance_due") or 0), 2)
+    amt = round(float(payment.get("amount") or 0), 2)
+    if balance > 0 and abs(balance - amt) < 0.01:
+        score += 30
+    elif balance > 0 and abs(balance - amt) < balance * 0.02:  # within 2%
+        score += 10
+    # Payer name / UPI matches customer name
+    payer = (payment.get("payer_name") or "").lower()
+    upi = (payment.get("payer_upi") or "").lower()
+    cust = (invoice.get("customer_name") or "").lower()
+    if payer and cust and payer in cust or cust in payer:
+        score += 5
+    if upi and cust and cust.split()[0] in upi:
+        score += 3
+    return score
+
+
+@api.post("/billing/reconcile")
+async def reconcile_payments(user=Depends(get_current_user)):
+    """
+    Match every 'unmatched' bank_payment to the best open invoice.
+    Auto-applies the match if score >= 60 (invoice # in reference OR exact-amount + party hint).
+    Marks the payment 'matched' + updates the invoice's paid_amount/balance_due.
+    Payments scoring 30-59 are marked 'possible' (needs manual confirm).
+    """
+    owner = user["current_ledger_id"]
+    payments = await db.bank_payments.find(
+        {"owner_id": owner, "status": "unmatched"}, {"_id": 0}
+    ).to_list(500)
+    open_invoices = await db.invoices.find(
+        {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+    ).to_list(1000)
+
+    auto_matched = 0
+    possible = 0
+    results = []
+    for p in payments:
+        best = None
+        best_score = 0
+        for inv in open_invoices:
+            s = _score_match(p, inv)
+            if s > best_score:
+                best_score = s
+                best = inv
+        if best and best_score >= 60:
+            new_paid = round(float(best.get("paid_amount") or 0) + float(p["amount"]), 2)
+            new_balance = round(float(best.get("total") or 0) - new_paid, 2)
+            await db.invoices.update_one(
+                {"id": best["id"], "owner_id": owner},
+                {"$set": {
+                    "paid_amount": new_paid,
+                    "balance_due": max(0.0, new_balance),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            await db.bank_payments.update_one(
+                {"id": p["id"], "owner_id": owner},
+                {"$set": {
+                    "status": "matched",
+                    "matched_invoice_id": best["id"],
+                    "matched_invoice_number": best["invoice_number"],
+                    "match_score": best_score,
+                    "matched_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            # Keep local list in sync so we don't double-match the same invoice
+            best["paid_amount"] = new_paid
+            best["balance_due"] = max(0.0, new_balance)
+            auto_matched += 1
+            results.append({
+                "payment_id": p["id"], "invoice_id": best["id"],
+                "invoice_number": best["invoice_number"], "score": best_score,
+                "status": "matched",
+            })
+        elif best and best_score >= 30:
+            await db.bank_payments.update_one(
+                {"id": p["id"], "owner_id": owner},
+                {"$set": {
+                    "status": "possible",
+                    "matched_invoice_id": best["id"],
+                    "matched_invoice_number": best["invoice_number"],
+                    "match_score": best_score,
+                }},
+            )
+            possible += 1
+            results.append({
+                "payment_id": p["id"], "invoice_id": best["id"],
+                "invoice_number": best["invoice_number"], "score": best_score,
+                "status": "possible",
+            })
+    return {"auto_matched": auto_matched, "possible": possible, "details": results}
+
+
+@api.post("/billing/bank-payments/{payment_id}/confirm")
+async def confirm_bank_payment_match(payment_id: str, user=Depends(get_current_user)):
+    """Confirm a 'possible' payment match — apply it to the invoice."""
+    owner = user["current_ledger_id"]
+    p = await db.bank_payments.find_one({"id": payment_id, "owner_id": owner}, {"_id": 0})
+    if not p or not p.get("matched_invoice_id"):
+        raise HTTPException(status_code=404, detail="No candidate invoice to confirm")
+    inv = await db.invoices.find_one(
+        {"id": p["matched_invoice_id"], "owner_id": owner}, {"_id": 0}
+    )
+    if not inv:
+        raise HTTPException(status_code=404, detail="Candidate invoice missing")
+    new_paid = round(float(inv.get("paid_amount") or 0) + float(p["amount"]), 2)
+    new_balance = round(float(inv.get("total") or 0) - new_paid, 2)
+    await db.invoices.update_one(
+        {"id": inv["id"], "owner_id": owner},
+        {"$set": {
+            "paid_amount": new_paid,
+            "balance_due": max(0.0, new_balance),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    await db.bank_payments.update_one(
+        {"id": payment_id, "owner_id": owner},
+        {"$set": {"status": "matched", "matched_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True, "invoice_number": inv["invoice_number"]}
+
+
+# ----- Overdue Digest (Resend / Emergent-managed email) -----
+import httpx as _httpx
+
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMERGENT_EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "").strip()
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Apka Munim").strip() or "Apka Munim"
+
+
+def _build_overdue_html(user_name: str, overdue: list, currency: str = "INR") -> str:
+    """Return an inline-styled HTML digest of overdue invoices."""
+    def fmt(v):
+        try: return f"₹{float(v):,.2f}" if currency == "INR" else f"{currency} {float(v):,.2f}"
+        except Exception: return str(v)
+
+    rows_html = ""
+    total_overdue = 0.0
+    today = datetime.now(timezone.utc).date()
+    for row in overdue:
+        due = row.get("due_date") or row.get("invoice_date") or ""
+        days = ""
+        try:
+            d = datetime.fromisoformat(str(due).replace("Z", "+00:00")).date()
+            days = f"{(today - d).days} days"
+        except Exception:
+            days = "—"
+        bal = float(row.get("balance_due") or 0)
+        total_overdue += bal
+        rows_html += (
+            "<tr>"
+            f"<td style='padding:8px;border-bottom:1px solid #E7E5DF;font-family:monospace'>{row.get('invoice_number','')}</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #E7E5DF'>{row.get('customer_name') or 'Walk-in'}</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #E7E5DF;color:#B15039'>{days}</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #E7E5DF;text-align:right;font-weight:700'>{fmt(bal)}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        body = "<p style='font-size:14px;color:#3B6446'>Great news — no overdue invoices right now. 🎉</p>"
+    else:
+        body = (
+            f"<p style='font-size:14px;color:#57534E'>Hi {user_name}, here's your overdue snapshot:</p>"
+            f"<p style='font-size:22px;color:#B15039;font-weight:700;margin:8px 0'>{fmt(total_overdue)} outstanding across {len(overdue)} invoice(s)</p>"
+            "<table style='width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;margin-top:12px'>"
+            "<thead><tr style='background:#F9F8F6'>"
+            "<th style='padding:8px;text-align:left;border-bottom:2px solid #1C1917'>Invoice #</th>"
+            "<th style='padding:8px;text-align:left;border-bottom:2px solid #1C1917'>Customer</th>"
+            "<th style='padding:8px;text-align:left;border-bottom:2px solid #1C1917'>Days Overdue</th>"
+            "<th style='padding:8px;text-align:right;border-bottom:2px solid #1C1917'>Balance</th>"
+            "</tr></thead>"
+            f"<tbody>{rows_html}</tbody></table>"
+        )
+    return (
+        "<div style='max-width:640px;margin:auto;font-family:Arial,sans-serif;color:#1C1917'>"
+        "<div style='background:#2A4F4F;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0'>"
+        "<div style='font-size:12px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8'>Weekly Digest</div>"
+        "<div style='font-size:22px;font-weight:800;margin-top:4px'>Overdue Invoices</div>"
+        "</div>"
+        "<div style='padding:20px;background:#fff;border:1px solid #E7E5DF;border-top:0;border-radius:0 0 8px 8px'>"
+        f"{body}"
+        "<p style='font-size:11px;color:#78716C;margin-top:24px;border-top:1px solid #E7E5DF;padding-top:12px'>"
+        "Powered by Apka Munim · Log in and hit \"Remind All on WhatsApp\" to chase these in one click.</p>"
+        "</div></div>"
+    )
+
+
+@api.post("/billing/overdue-digest/send")
+async def send_overdue_digest(user=Depends(get_current_user)):
+    """Send an overdue-invoice digest email to the current user via Emergent-managed Resend."""
+    if not EMERGENT_EMAIL_KEY or EMERGENT_EMAIL_KEY.startswith("dev-placeholder"):
+        raise HTTPException(
+            status_code=503,
+            detail="Email service not configured. Set EMERGENT_EMAIL_KEY in backend/.env.",
+        )
+    owner = user["current_ledger_id"]
+    today = datetime.now(timezone.utc).date().isoformat()
+    open_invoices = await db.invoices.find(
+        {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+    ).to_list(500)
+    overdue = [
+        inv for inv in open_invoices
+        if (inv.get("due_date") or "") and str(inv["due_date"])[:10] < today
+    ]
+    html = _build_overdue_html(user.get("name", "there"), overdue, user.get("currency", "INR"))
+    payload = {
+        "to": [user["email"]],
+        "subject": f"Overdue Digest · {len(overdue)} invoice(s) pending",
+        "html": html,
+        "from_name": EMAIL_FROM_NAME,
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{EMAIL_BASE_URL}/api/v1/email/send",
+                headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
+                json=payload,
+            )
+        resp.raise_for_status()
+        return {
+            "status": "sent",
+            "recipient": user["email"],
+            "count": len(overdue),
+            "email_id": resp.json().get("id"),
+        }
+    except _httpx.HTTPStatusError as e:
+        logger.error(f"Overdue digest send failed: {e.response.status_code} {e.response.text}")
+        raise HTTPException(status_code=502, detail="Failed to send email")
+    except Exception as e:
+        logger.error(f"Overdue digest error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+
+# ----- Recurring auto-run trigger (called from /auth/me on daily cadence) -----
+async def _auto_run_recurring_if_due(user: dict):
+    """
+    Fire-and-forget helper: if user hasn't triggered recurring in >23h,
+    invoke the runner inline. Kept fast — small template counts, no external calls.
+    """
+    try:
+        last = user.get("last_recurring_run")
+        now = datetime.now(timezone.utc)
+        should_run = True
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                should_run = (now - last_dt).total_seconds() > 23 * 3600
+            except Exception:
+                should_run = True
+        if not should_run:
+            return
+        owner = user["current_ledger_id"]
+        today = now.date().isoformat()
+        # Re-use core generator logic (mirrors run_recurring_invoices)
+        templates = await db.recurring_invoices.find(
+            {"owner_id": owner, "enabled": True, "next_run_date": {"$lte": today}},
+            {"_id": 0},
+        ).to_list(200)
+        for t in templates:
+            items = t.get("items", [])
+            totals = _compute_invoice_totals(
+                [dict(it) for it in items],
+                t.get("discount_amount", 0),
+                t.get("shipping", 0),
+                t.get("gst_mode", "exclusive"),
+            )
+            inv_no = await _next_invoice_number(owner, t.get("invoice_type", "tax"), now)
+            inv_id = str(uuid.uuid4())
+            await db.invoices.insert_one({
+                "id": inv_id, "owner_id": owner, "invoice_number": inv_no,
+                "invoice_type": t.get("invoice_type", "tax"),
+                "customer_id": t.get("customer_id"),
+                "customer_name": t.get("customer_name"),
+                "items": items,
+                "gst_mode": t.get("gst_mode", "exclusive"),
+                **totals,
+                "paid_amount": 0.0, "balance_due": totals["total"],
+                "payment_mode": t.get("payment_mode", "credit"),
+                "account_id": t.get("account_id"),
+                "notes": t.get("notes"), "terms": t.get("terms"),
+                "invoice_date": now.isoformat(), "due_date": None,
+                "status": "final", "created_at": now.isoformat(),
+                "irn": None, "irn_qr": None,
+                "generated_from_template": t["id"],
+                "auto_generated": True,
+            })
+            await db.recurring_invoices.update_one(
+                {"id": t["id"]},
+                {
+                    "$set": {
+                        "last_generated_at": now.isoformat(),
+                        "next_run_date": _next_monthly_run_date(t.get("day_of_month", 1), now),
+                    },
+                    "$inc": {"generated_count": 1},
+                },
+            )
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"last_recurring_run": now.isoformat()}},
+        )
+    except Exception as e:
+        logger.warning(f"Auto-recurring run skipped: {e}")
 
 
 # ----- Public account deletion request (unauthenticated form) -----
