@@ -5265,12 +5265,31 @@ async def root():
     return {"app": "Apka Munim", "status": "ok"}
 
 
+@api.get("/healthz")
+async def healthz():
+    """Lightweight health endpoint for Railway / uptime monitors."""
+    try:
+        # Ping MongoDB with a cheap admin command
+        await db.command("ping")
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": "up" if db_ok else "down",
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()],
+    allow_origins=(
+        [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+        or ["*"]  # Safe fallback so a missing CORS_ORIGINS on Railway doesn't silently block every request
+    ),
     allow_methods=["*"],
     allow_headers=["*"],
 )
