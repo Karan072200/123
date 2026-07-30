@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../context/LanguageContext';
 import {
   X,
   Users,
@@ -47,6 +48,7 @@ import {
 
 export default function HamburgerMenu({ isOpen, onClose }) {
   const { logout, user } = useAuth();
+  const { t } = useLang();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -75,7 +77,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
 
   const menuSections = [
     {
-      title: 'BUSINESS',
+      title: t('section_business', 'BUSINESS').toUpperCase(),
       items: [
         { label: 'Customers', path: '/customers', icon: Users },
         { label: 'Suppliers', path: '/suppliers', icon: UserCheck },
@@ -87,7 +89,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
       ],
     },
     {
-      title: 'PRODUCTS & INVENTORY',
+      title: t('section_products', 'PRODUCTS & INVENTORY').toUpperCase(),
       items: [
         { label: 'Products & Services', path: '/products', icon: Package },
         { label: 'Product Categories', path: '/products?tab=categories', icon: Tag },
@@ -102,7 +104,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
       ],
     },
     {
-      title: 'PAYMENTS',
+      title: t('section_payments', 'PAYMENTS').toUpperCase(),
       items: [
         { label: 'Payment Received', path: '/billing/payments?type=received', icon: TrendingUp },
         { label: 'Payment Made', path: '/billing/payments?type=made', icon: TrendingDown },
@@ -111,7 +113,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
       ],
     },
     {
-      title: 'EXPENSE & INCOME',
+      title: t('section_expense', 'EXPENSE & INCOME').toUpperCase(),
       items: [
         { label: 'Daily Expenses', path: '/transactions?type=expense', icon: TrendingDown },
         { label: 'Other Income', path: '/transactions?type=income', icon: TrendingUp },
@@ -165,7 +167,7 @@ export default function HamburgerMenu({ isOpen, onClose }) {
       ],
     },
     {
-      title: 'ACCOUNT',
+      title: t('section_account', 'ACCOUNT').toUpperCase(),
       items: [
         { label: 'Upgrade to Premium', path: '/premium', icon: Crown, highlight: true },
         { label: 'Business Profile', path: '/settings?tab=profile', icon: SettingsIcon },

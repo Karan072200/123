@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle } from "lucide-react";
+import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle, AlertCircle } from "lucide-react";
 import DateFilter, { computeRange } from "@/components/DateFilter";
 
 function loadCompany() {
@@ -36,20 +36,33 @@ export default function Invoices() {
   const cur = user?.currency || "INR";
   const [items, setItems] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [pendingPayments, setPendingPayments] = useState([]);
   const [datePreset, setDatePreset] = useState("all");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [typeFilter, setTypeFilter] = useState("all");
   const nav = useNavigate();
 
   const load = async () => {
-    const [inv, cus] = await Promise.all([
+    const [inv, cus, bp] = await Promise.all([
       http.get("/billing/invoices").then(r => r.data).catch(() => []),
       http.get("/billing/customers").then(r => r.data).catch(() => []),
+      http.get("/billing/bank-payments").then(r => r.data).catch(() => []),
     ]);
     setItems(inv || []);
     setCustomers(cus || []);
+    setPendingPayments((bp || []).filter((p) => p.status === "possible"));
   };
   useEffect(() => { load(); }, []);
+
+  // invoice_id -> count of possible matches
+  const possibleByInvoice = React.useMemo(() => {
+    const map = {};
+    for (const p of pendingPayments) {
+      if (!p.matched_invoice_id) continue;
+      map[p.matched_invoice_id] = (map[p.matched_invoice_id] || 0) + 1;
+    }
+    return map;
+  }, [pendingPayments]);
 
   const filtered = React.useMemo(() => {
     const range = computeRange(datePreset, customRange);
@@ -136,7 +149,23 @@ export default function Invoices() {
               <tbody className="divide-y divide-[#E7E5DF]">
                 {filtered.map((inv) => (
                   <tr key={inv.id} data-testid={`invoice-${inv.id}`} className="hover:bg-[#F9F8F6]">
-                    <td className="p-3 font-mono font-medium">{inv.invoice_number}</td>
+                    <td className="p-3 font-mono font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <span>{inv.invoice_number}</span>
+                        {possibleByInvoice[inv.id] ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); nav("/billing/bank-payments"); }}
+                            data-testid={`invoice-possible-${inv.id}`}
+                            title="Bank payment likely matches this invoice — click to review"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200"
+                          >
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            {possibleByInvoice[inv.id]} payment ready
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="p-3 hidden sm:table-cell">{inv.customer_name || "Walk-in"}</td>
                     <td className="p-3 hidden md:table-cell text-xs text-[#78716C]">{new Date(inv.invoice_date).toLocaleDateString("en-IN")}</td>
                     <td className="p-3 text-right font-semibold"><MoneyValue>{formatMoney(inv.total, cur)}</MoneyValue></td>

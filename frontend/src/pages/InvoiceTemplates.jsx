@@ -4,7 +4,7 @@ import { http, formatMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { BookMarked, Trash2, ArrowLeft, Copy } from "lucide-react";
+import { BookMarked, Trash2, ArrowLeft, Copy, CopyPlus } from "lucide-react";
 
 export default function InvoiceTemplates() {
   const { user } = useAuth();
@@ -35,6 +35,28 @@ export default function InvoiceTemplates() {
     // Store selected template id in sessionStorage; InvoiceCreate reads it on mount
     sessionStorage.setItem("am_use_template_id", r.id);
     nav("/billing/invoices/new");
+  };
+
+  const duplicate = async (r) => {
+    const name = window.prompt(`New template name?`, `${r.name} (Copy)`);
+    if (!name || !name.trim()) return;
+    try {
+      await http.post("/billing/invoice-templates", {
+        name: name.trim(),
+        invoice_type: r.invoice_type,
+        items: r.items || [],
+        discount_amount: r.discount_amount || 0,
+        shipping: r.shipping || 0,
+        gst_mode: r.gst_mode || "exclusive",
+        payment_mode: r.payment_mode || "cash",
+        notes: r.notes || "",
+        terms: r.terms || "",
+      });
+      toast.success(`Template "${name.trim()}" created`);
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Duplicate failed");
+    }
   };
 
   const approxTotal = (r) => {
@@ -104,6 +126,11 @@ export default function InvoiceTemplates() {
                         data-testid={`template-use-${r.id}`}
                         className="p-1.5 hover:bg-emerald-50 rounded text-emerald-700" title="Use">
                         <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => duplicate(r)}
+                        data-testid={`template-duplicate-${r.id}`}
+                        className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Duplicate">
+                        <CopyPlus className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => del(r)}
                         className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]" title="Delete">

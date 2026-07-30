@@ -4815,6 +4815,136 @@ async def _auto_run_recurring_if_due(user: dict):
         logger.warning(f"Auto-recurring run skipped: {e}")
 
 
+# ----- Public UPI/Payment Webhook (PhonePe / PayU / Cashfree / generic) -----
+class UpiWebhookPayload(BaseModel):
+    amount: float
+    reference: Optional[str] = None
+    payer_name: Optional[str] = None
+    payer_upi: Optional[str] = None
+    payment_mode: Optional[str] = "upi"
+    payment_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+def _verify_webhook_signature(secret: str, body_bytes: bytes, sent_sig: str) -> bool:
+    if not secret or not sent_sig:
+        return False
+    import hmac as _hmac
+    import hashlib as _hashlib
+    mac = _hmac.new(secret.encode(), body_bytes, _hashlib.sha256).hexdigest()
+    return _hmac.compare_digest(mac, sent_sig.strip().lower().replace("sha256=", ""))
+
+
+@app.post("/api/webhooks/upi/{business_id}")
+@limiter.limit("120/hour")
+async def upi_payment_webhook(business_id: str, request: Request):
+    """
+    Public endpoint for payment providers to notify us of incoming UPI/bank
+    payments. Body: {amount, reference, payer_name, payer_upi, payment_mode, notes}.
+    Optional HMAC signature via `X-Signature-256: sha256=<hex>` header, verified
+    against the user's `webhook_secret` (set via /billing/webhook/rotate).
+    """
+    # Locate the target user (ledger owner). business_id == user.id.
+    user_doc = await db.users.find_one({"id": business_id}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    raw = await request.body()
+    sent_sig = request.headers.get("x-signature-256", "")
+    secret = user_doc.get("webhook_secret")
+    # If a secret is set, signature MUST match. If no secret, allow (dev mode).
+    if secret and not _verify_webhook_signature(secret, raw, sent_sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        data = UpiWebhookPayload(**(await request.json()))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad payload: {e}")
+
+    owner = user_doc.get("current_ledger_id") or user_doc["personal_ledger_id"]
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": owner,
+        **data.dict(),
+        "payment_date": data.payment_date or now.isoformat(),
+        "status": "unmatched",
+        "matched_invoice_id": None,
+        "matched_invoice_number": None,
+        "created_at": now.isoformat(),
+        "source": "webhook",
+    }
+    await db.bank_payments.insert_one(doc)
+
+    # Attempt auto-match immediately (best-effort)
+    try:
+        open_invoices = await db.invoices.find(
+            {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+        ).to_list(500)
+        best, best_score = None, 0
+        for inv in open_invoices:
+            s = _score_match(doc, inv)
+            if s > best_score:
+                best_score, best = s, inv
+        if best and best_score >= 60:
+            new_paid = round(float(best.get("paid_amount") or 0) + float(doc["amount"]), 2)
+            new_balance = round(float(best.get("total") or 0) - new_paid, 2)
+            await db.invoices.update_one(
+                {"id": best["id"], "owner_id": owner},
+                {"$set": {
+                    "paid_amount": new_paid,
+                    "balance_due": max(0.0, new_balance),
+                    "updated_at": now.isoformat(),
+                }},
+            )
+            await db.bank_payments.update_one(
+                {"id": doc["id"]},
+                {"$set": {
+                    "status": "matched",
+                    "matched_invoice_id": best["id"],
+                    "matched_invoice_number": best["invoice_number"],
+                    "match_score": best_score,
+                    "matched_at": now.isoformat(),
+                }},
+            )
+        elif best and best_score >= 30:
+            await db.bank_payments.update_one(
+                {"id": doc["id"]},
+                {"$set": {
+                    "status": "possible",
+                    "matched_invoice_id": best["id"],
+                    "matched_invoice_number": best["invoice_number"],
+                    "match_score": best_score,
+                }},
+            )
+    except Exception as e:
+        logger.warning(f"Webhook auto-match skipped: {e}")
+
+    return {"status": "accepted", "payment_id": doc["id"]}
+
+
+@api.post("/billing/webhook/rotate")
+async def rotate_webhook_secret(user=Depends(get_current_user)):
+    """Generate a new HMAC secret for the current user's payment webhook."""
+    import secrets as _secrets
+    new_secret = _secrets.token_urlsafe(32)
+    await db.users.update_one({"id": user["id"]}, {"$set": {"webhook_secret": new_secret}})
+    return {
+        "webhook_url": f"/api/webhooks/upi/{user['id']}",
+        "secret": new_secret,
+        "hint": "Send this in X-Signature-256 header as sha256=<hex_hmac_of_body>.",
+    }
+
+
+@api.get("/billing/webhook/info")
+async def get_webhook_info(user=Depends(get_current_user)):
+    doc = await db.users.find_one({"id": user["id"]}, {"webhook_secret": 1, "_id": 0})
+    return {
+        "webhook_url": f"/api/webhooks/upi/{user['id']}",
+        "has_secret": bool(doc and doc.get("webhook_secret")),
+    }
+
+
 # ----- Public account deletion request (unauthenticated form) -----
 import re as _re
 
@@ -4862,6 +4992,67 @@ app.add_middleware(
 
 
 @app.on_event("startup")
+async def _startup():
+    # Weekly overdue-digest scheduler — Mondays 08:00 Asia/Kolkata
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+
+        async def _weekly_overdue_digest_job():
+            if not EMERGENT_EMAIL_KEY or EMERGENT_EMAIL_KEY.startswith("dev-placeholder"):
+                logger.info("Digest job skipped — EMERGENT_EMAIL_KEY not configured")
+                return
+            try:
+                users = await db.users.find({}, {"_id": 0}).to_list(2000)
+                sent = 0
+                today = datetime.now(timezone.utc).date().isoformat()
+                for u in users:
+                    owner = u.get("current_ledger_id") or u.get("personal_ledger_id")
+                    if not owner or not u.get("email"):
+                        continue
+                    open_invoices = await db.invoices.find(
+                        {"owner_id": owner, "balance_due": {"$gt": 0}}, {"_id": 0}
+                    ).to_list(500)
+                    overdue = [
+                        i for i in open_invoices
+                        if (i.get("due_date") or "") and str(i["due_date"])[:10] < today
+                    ]
+                    if not overdue:
+                        continue
+                    html = _build_overdue_html(u.get("name", "there"), overdue, u.get("currency", "INR"))
+                    try:
+                        async with _httpx.AsyncClient(timeout=30) as client:
+                            r = await client.post(
+                                f"{EMAIL_BASE_URL}/api/v1/email/send",
+                                headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
+                                json={
+                                    "to": [u["email"]],
+                                    "subject": f"Overdue Digest · {len(overdue)} invoice(s) pending",
+                                    "html": html,
+                                    "from_name": EMAIL_FROM_NAME,
+                                },
+                            )
+                            if r.status_code < 300:
+                                sent += 1
+                    except Exception as e:
+                        logger.warning(f"Digest send to {u['email']} failed: {e}")
+                logger.info(f"Weekly overdue digest complete: {sent} emails sent")
+            except Exception as e:
+                logger.error(f"Weekly digest job crashed: {e}")
+
+        scheduler.add_job(
+            _weekly_overdue_digest_job,
+            CronTrigger(day_of_week="mon", hour=8, minute=0),
+            id="weekly_overdue_digest",
+            replace_existing=True,
+        )
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logger.info("APScheduler started — weekly overdue digest scheduled Mon 08:00 IST")
+    except Exception as e:
+        logger.warning(f"Scheduler init failed: {e}")
+    logger.info("Apka Munim API started")
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.accounts.create_index([("owner_id", 1)])

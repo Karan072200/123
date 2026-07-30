@@ -5,6 +5,7 @@ import { PrivacyProvider } from './context/PrivacyContext';
 import { PremiumProvider } from './context/PremiumContext';
 import { DashboardPrefsProvider } from './context/DashboardPrefsContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { LanguageProvider } from './context/LanguageContext';
 
 import Layout from './components/Layout';
 import BillingLayout from './components/billing/BillingLayout';
@@ -76,6 +77,7 @@ function RootRoute() {
 export default function App() {
   return (
     <ThemeProvider>
+      <LanguageProvider>
       <AuthProvider>
         <PremiumProvider>
         <DashboardPrefsProvider>
@@ -146,6 +148,7 @@ export default function App() {
         </DashboardPrefsProvider>
         </PremiumProvider>
       </AuthProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }
