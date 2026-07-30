@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 12 verified the 5 new features (Document Convert, Party Profile + Statement, Purchase Bills page, Statement PDF, GSTIN autofill) end-to-end. Backend: 13/13 pytest cases pass — GSTIN lookup (valid=Maharashtra/ABCDE1234F/Proprietor, bad=400, unauth=401), Convert quotation→tax (new INV/… number, converted_from_* set, source gets converted_to_*, tax source→400), Party profile+statement JSON (totals correctly summed) + statement.pdf (200, application/pdf, %PDF-, 2583 bytes), Purchase invoice CRUD, and regression on /api/billing/invoices, /billing/products, /billing/customers, /billing/suppliers, /ledgers, /analytics/summary. Frontend (playwright with fresh registered user + seeded data): /billing/purchase-bills renders with page/new/search testids and the seeded purchase row; /billing/parties/{id} renders profile page with header 'UI Test Cust', 4 KPI tiles, WhatsApp + Statement PDF buttons and the tax invoice row; /billing/invoices Convert button click triggered window.confirm (auto-accepted), navigated to /billing/invoices/{new_id}/edit and returning to list shows the converted-badge on source row; Parties Add-Customer dialog GSTIN input accepts 27ABCDE1234F1Z5 and the Fetch button auto-fills the Address textarea with 'Maharashtra'; BillingSidebar has 'Purchase Bills' child that routes to /billing/purchase-bills (confirmed visually — screenshot shows green-highlighted link — old ?type=purchase URL not present anywhere); Statement PDF direct fetch returns valid PDF (200, application/pdf, %PDF- magic); /dashboard still uses personal Layout (layout-hamburger-btn) and no billing-sidebar leaks there.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Parties Add-Customer dialog", "issues": ["GSTIN autofill fills the Address textarea with just the state name ('Maharashtra'). Functionally correct per spec but the user may expect a labelled field like 'State' rather than the free-text Address. Consider surfacing state / PAN as read-only chips next to the GSTIN input for clarity, and only pre-fill Address if it is empty (currently observed empty-fill working)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_new_features.py",
+    "/app/test_reports/pytest/iteration12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GstinInput.jsx onBlur triggers lookup whenever value.length===15, but doesn't debounce or dedupe — typing then clicking Fetch fires the API twice back-to-back. Minor, but the rate-limit is 30/min so not a real risk.",
+    "Convert flow uses window.confirm — not testable in Playwright without a dialog handler and not accessible for keyboard users; a shadcn <AlertDialog> would be nicer.",
+    "PartyProfile.jsx uses dynamic Tailwind classes bg-${accent}-50 / border-${accent}-200 — Tailwind's JIT purge WILL strip these unless safelisted. Currently emerald/sky may render because they're used elsewhere, but this is a fragile pattern.",
+    "server.py convert_invoice does NOT copy across the source's customer_gstin / place_of_supply fields (only customer_id/name/items). If the source was manually edited to change GSTIN, the new invoice won't inherit the change — acceptable for MVP but worth documenting.",
+    "PurchaseBills.jsx filters client-side by invoice_type==='purchase' on the full /billing/invoices response — will not scale beyond 500 invoices (backend to_list(500) cap). Consider a server-side ?type=purchase filter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_new_features.py (new)",
+    "/app/test_reports/pytest/iteration12.xml (junit output)"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "100% (7/7 flows: purchase-bills, party-profile, convert, converted-badge, gstin-autofill, personal-layout-intact, statement-pdf)"},
+  "test_credentials": "Fresh per run: erp_it12_<ts>@test.com / Testpass123! (register via /api/auth/register)",
+  "seed_data_creation": "Per-run: 1 customer, 1 supplier, 1 quotation (converted), 1 purchase bill, 1 tax invoice via authed API. All are per-user and cleaned up when DELETE /api/auth/me is called by the fixture teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 5 features functional. If further work adds InvoiceCreate for type=purchase (currently 'New Purchase Bill' navigates to /billing/invoices/new?type=purchase and relies on Invoices form supporting the purchase mode), verify that path still creates a purchase-type invoice end-to-end from the UI (not just via API as done here). GstinInput safelist for dynamic Tailwind colors also worth verifying if PartyProfile ever renders with kind=='supplier' visually (was tested with kind=='customer').",
+  "rca of the issue": "N/A — no issues found."
+}

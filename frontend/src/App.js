@@ -51,6 +51,8 @@ import SalesReturns from './pages/billing/SalesReturns';
 import CustomerLedger from './pages/billing/CustomerLedger';
 import SupplierLedger from './pages/billing/SupplierLedger';
 import InventoryAdjustments from './pages/billing/InventoryAdjustments';
+import PartyProfile from './pages/billing/PartyProfile';
+import PurchaseBills from './pages/billing/PurchaseBills';
 
 function ProtectedMainRoute({ children }) {
   const { user } = useAuth();
@@ -137,6 +139,8 @@ export default function App() {
               <Route path="/billing/purchase-orders" element={<ProtectedBillingRoute><Invoices type="purchase-order" /></ProtectedBillingRoute>} />
               <Route path="/billing/debit-notes" element={<ProtectedBillingRoute><Invoices type="debit-note" /></ProtectedBillingRoute>} />
               <Route path="/billing/parties" element={<ProtectedBillingRoute><Parties /></ProtectedBillingRoute>} />
+              <Route path="/billing/parties/:id" element={<ProtectedBillingRoute><PartyProfile /></ProtectedBillingRoute>} />
+              <Route path="/billing/purchase-bills" element={<ProtectedBillingRoute><PurchaseBills /></ProtectedBillingRoute>} />
               <Route path="/billing/inventory" element={<ProtectedBillingRoute><Products /></ProtectedBillingRoute>} />
               <Route path="/billing/inventory-adjustments" element={<ProtectedBillingRoute><InventoryAdjustments /></ProtectedBillingRoute>} />
               <Route path="/billing/outstanding" element={<ProtectedBillingRoute><Udhaar /></ProtectedBillingRoute>} />

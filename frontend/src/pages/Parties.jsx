@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Users, Plus, Trash2, Edit3, Phone, Mail } from "lucide-react";
+import GstinInput from "@/components/billing/GstinInput";
 
 const emptyForm = { name: "", phone: "", email: "", gstin: "", address: "", opening_balance: 0 };
 
@@ -140,8 +141,22 @@ export default function Parties({ kind = "customer" }) {
                 <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               </div>
             </div>
-            <div><Label>GSTIN</Label>
-              <Input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} />
+            <div>
+              <Label>GSTIN <span className="text-xs text-[#78716C] font-normal">(auto-fill state)</span></Label>
+              <GstinInput
+                value={form.gstin}
+                onChange={(v) => setForm((f) => ({ ...f, gstin: v }))}
+                onExtract={(data) => {
+                  setForm((f) => ({
+                    ...f,
+                    gstin: data.gstin,
+                    // pre-fill address with state name only if the field is empty
+                    address: f.address || data.state_name,
+                  }));
+                }}
+                testIdPrefix="party"
+                className="mt-1"
+              />
             </div>
             <div><Label>Address</Label>
               <Textarea rows={2} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />

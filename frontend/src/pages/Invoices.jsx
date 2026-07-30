@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle, AlertCircle } from "lucide-react";
+import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle, AlertCircle, ArrowRightCircle } from "lucide-react";
 import DateFilter, { computeRange } from "@/components/DateFilter";
 
 function loadCompany() {
@@ -89,6 +89,18 @@ export default function Invoices() {
     const company = loadCompany();
     const customer = customers.find((c) => c.id === inv.customer_id);
     whatsappShare(inv, customer, company, cur);
+  };
+
+  const convertibleTypes = new Set(["quotation", "proforma", "challan", "sales-order"]);
+  const convertToInvoice = async (inv) => {
+    if (!window.confirm(`${inv.invoice_number} ko Tax Invoice me convert karna hai?`)) return;
+    try {
+      const { data } = await http.post(`/billing/invoices/${inv.id}/convert`, { target_type: "tax" });
+      toast.success(`Converted to ${data.invoice_number}`);
+      nav(`/billing/invoices/${data.id}/edit`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Convert failed");
+    }
   };
 
   return (
@@ -182,6 +194,12 @@ export default function Invoices() {
                     <td className="p-3 text-right whitespace-nowrap">
                       <button onClick={() => view(inv.id)} data-testid={`view-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="View"><Eye className="w-3.5 h-3.5" /></button>
                       <button onClick={() => nav(`/billing/invoices/${inv.id}/edit`)} data-testid={`edit-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
+                      {convertibleTypes.has(inv.invoice_type) && !inv.converted_to_id ? (
+                        <button onClick={() => convertToInvoice(inv)} data-testid={`convert-inv-${inv.id}`} className="p-1.5 hover:bg-emerald-50 rounded text-emerald-700" title="Convert to Tax Invoice"><ArrowRightCircle className="w-3.5 h-3.5" /></button>
+                      ) : null}
+                      {inv.converted_to_id ? (
+                        <span data-testid={`converted-badge-${inv.id}`} className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Already converted to ${inv.converted_to_number || ""}`}>Converted</span>
+                      ) : null}
                       <button onClick={() => share(inv)} data-testid={`whatsapp-inv-${inv.id}`} className="p-1.5 hover:bg-[#25D366]/10 rounded text-[#25D366]" title="Share on WhatsApp"><MessageCircle className="w-3.5 h-3.5" /></button>
                       <button onClick={() => printInv(inv.id)} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Print / PDF"><Printer className="w-3.5 h-3.5" /></button>
                       <button onClick={() => remove(inv.id)} className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -196,3 +214,4 @@ export default function Invoices() {
     </div>
   );
 }
+

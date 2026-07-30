@@ -4078,6 +4078,323 @@ async def delete_invoice(invoice_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+# ----- Document conversion: Quotation / Sales Order / Delivery Challan -> Tax Invoice -----
+class ConvertInvoiceIn(BaseModel):
+    target_type: str = "tax"
+
+
+@api.post("/billing/invoices/{invoice_id}/convert")
+async def convert_invoice(invoice_id: str, body: ConvertInvoiceIn, user=Depends(get_current_user)):
+    """
+    Convert a Quotation / Sales Order / Delivery Challan / Proforma into a
+    real Tax Invoice in one tap. The source document stays untouched, the new
+    invoice records `converted_from_id` + `converted_from_number` for audit.
+    """
+    owner = user["current_ledger_id"]
+    src = await db.invoices.find_one({"id": invoice_id, "owner_id": owner})
+    if not src:
+        raise HTTPException(status_code=404, detail="Source document not found")
+
+    allowed_sources = {"quotation", "proforma", "challan", "sales-order"}
+    if src.get("invoice_type") not in allowed_sources:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {sorted(allowed_sources)} documents can be converted",
+        )
+
+    target_type = body.target_type or "tax"
+    if target_type not in ("tax", "gst"):
+        raise HTTPException(status_code=400, detail="target_type must be tax or gst")
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_id = str(uuid.uuid4())
+    new_no = await _next_invoice_number(owner, target_type, now)
+
+    items = list(src.get("items", []))
+    totals = _compute_invoice_totals(
+        items,
+        src.get("discount_amount") or 0,
+        src.get("shipping") or 0,
+        src.get("gst_mode") or "exclusive",
+    )
+    paid_amt = 0.0  # newly issued, no payment yet
+
+    doc = {
+        "id": new_id, "owner_id": owner, "invoice_number": new_no,
+        "invoice_type": target_type,
+        "customer_id": src.get("customer_id"), "customer_name": src.get("customer_name"),
+        "items": items, "gst_mode": src.get("gst_mode") or "exclusive", **totals,
+        "paid_amount": paid_amt,
+        "balance_due": round(totals["total"] - paid_amt, 2),
+        "payment_mode": "credit", "account_id": None,
+        "notes": src.get("notes"),
+        "terms": src.get("terms"),
+        "invoice_date": now,
+        "due_date": None,
+        "status": "final",
+        "created_at": now,
+        "converted_from_id": src["id"],
+        "converted_from_number": src.get("invoice_number"),
+        "converted_from_type": src.get("invoice_type"),
+        "irn": None, "irn_qr": None,
+    }
+    await db.invoices.insert_one(doc)
+
+    # Decrement stock for each product line (real tax invoice now)
+    for it in items:
+        if it.get("product_id"):
+            await db.products.update_one(
+                {"id": it["product_id"], "owner_id": owner},
+                {"$inc": {"stock": -float(it.get("qty", 0))}}
+            )
+    # Bump party outstanding
+    if src.get("customer_id") and doc["balance_due"] > 0:
+        await db.parties.update_one(
+            {"id": src["customer_id"], "owner_id": owner},
+            {"$inc": {"outstanding": doc["balance_due"]}}
+        )
+
+    # Mark source as converted (soft flag; source doc remains)
+    await db.invoices.update_one(
+        {"id": src["id"]},
+        {"$set": {"converted_to_id": new_id, "converted_to_number": new_no}},
+    )
+
+    doc.pop("_id", None)
+    return doc
+
+
+# ----- Party profile + Statement (data + PDF) -----
+@api.get("/billing/parties/{party_id}")
+async def get_party(party_id: str, user=Depends(get_current_user)):
+    p = await db.parties.find_one(
+        {"id": party_id, "owner_id": user["current_ledger_id"]}, {"_id": 0}
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="Party not found")
+    return p
+
+
+@api.get("/billing/parties/{party_id}/statement")
+async def party_statement(party_id: str, user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    party = await db.parties.find_one({"id": party_id, "owner_id": owner}, {"_id": 0})
+    if not party:
+        raise HTTPException(status_code=404, detail="Party not found")
+
+    invs = await db.invoices.find(
+        {
+            "owner_id": owner,
+            "$or": [
+                {"customer_id": party_id},
+                {"supplier_id": party_id},
+            ],
+        },
+        {"_id": 0},
+    ).sort("invoice_date", -1).to_list(1000)
+
+    total_billed = sum(float(i.get("total", 0)) for i in invs)
+    total_paid = sum(float(i.get("paid_amount", 0)) for i in invs)
+    total_due = sum(float(i.get("balance_due", 0)) for i in invs)
+
+    return {
+        "party": party,
+        "invoices": invs,
+        "totals": {
+            "billed": round(total_billed, 2),
+            "paid": round(total_paid, 2),
+            "outstanding": round(total_due, 2),
+            "count": len(invs),
+        },
+    }
+
+
+@api.get("/billing/parties/{party_id}/statement.pdf")
+async def party_statement_pdf(party_id: str, user=Depends(get_current_user)):
+    """Generate a printable / WhatsApp-shareable ledger PDF for a party."""
+    owner = user["current_ledger_id"]
+    party = await db.parties.find_one({"id": party_id, "owner_id": owner}, {"_id": 0})
+    if not party:
+        raise HTTPException(status_code=404, detail="Party not found")
+    invs = await db.invoices.find(
+        {"owner_id": owner, "$or": [{"customer_id": party_id}, {"supplier_id": party_id}]},
+        {"_id": 0},
+    ).sort("invoice_date", 1).to_list(1000)
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    total_billed = sum(float(i.get("total", 0)) for i in invs)
+    total_paid = sum(float(i.get("paid_amount", 0)) for i in invs)
+    total_due = round(total_billed - total_paid, 2)
+    currency = user.get("currency", "INR")
+    cur_sym = {"INR": "Rs.", "USD": "$", "EUR": "EUR ", "GBP": "GBP ", "AED": "AED "}.get(currency, "")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=1.6 * cm, rightMargin=1.6 * cm,
+        topMargin=1.6 * cm, bottomMargin=1.6 * cm,
+        title=f"Statement — {party.get('name', '')}",
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="TitleBig", fontSize=20, leading=24, textColor=colors.HexColor("#2A4F4F"), spaceAfter=4))
+    styles.add(ParagraphStyle(name="Sub", fontSize=10, textColor=colors.HexColor("#57534E"), spaceAfter=10))
+    styles.add(ParagraphStyle(name="H2", fontSize=13, leading=16, textColor=colors.HexColor("#1C1917"), spaceBefore=6, spaceAfter=6))
+    styles.add(ParagraphStyle(name="Small", fontSize=9, textColor=colors.HexColor("#57534E")))
+
+    story = []
+    story.append(Paragraph("Statement of Account", styles["TitleBig"]))
+    story.append(Paragraph(
+        f"Party: <b>{party.get('name','')}</b> &middot; {party.get('kind','').title()} &middot; "
+        f"Ledger: {user.get('current_ledger', {}).get('name', '')}",
+        styles["Sub"],
+    ))
+    if party.get("phone") or party.get("email") or party.get("gstin"):
+        info = []
+        if party.get("phone"): info.append(f"Phone: {party['phone']}")
+        if party.get("email"): info.append(f"Email: {party['email']}")
+        if party.get("gstin"): info.append(f"GSTIN: {party['gstin']}")
+        story.append(Paragraph(" &middot; ".join(info), styles["Small"]))
+        story.append(Spacer(1, 6))
+
+    # Summary table
+    st = Table(
+        [["Total Billed", "Total Paid", "Outstanding"],
+         [f"{cur_sym}{total_billed:,.2f}", f"{cur_sym}{total_paid:,.2f}", f"{cur_sym}{total_due:,.2f}"]],
+        colWidths=[5.5 * cm, 5.5 * cm, 5.5 * cm],
+    )
+    st.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2A4F4F")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("PADDING", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 1), (-1, 1), 13),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("BACKGROUND", (2, 1), (2, 1), colors.HexColor("#FDF5E7") if total_due > 0 else colors.HexColor("#EAF3EC")),
+    ]))
+    story.append(st)
+    story.append(Spacer(1, 12))
+
+    # Invoice ledger table
+    story.append(Paragraph(f"Invoices ({len(invs)})", styles["H2"]))
+    data = [["Date", "Doc #", "Type", "Total", "Paid", "Balance"]]
+    for inv in invs:
+        d = inv.get("invoice_date") or inv.get("created_at") or ""
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00")).strftime("%d %b %Y")
+        except Exception:
+            d = str(d)[:10]
+        data.append([
+            d,
+            inv.get("invoice_number", ""),
+            (inv.get("invoice_type") or "").upper(),
+            f"{cur_sym}{float(inv.get('total', 0)):,.2f}",
+            f"{cur_sym}{float(inv.get('paid_amount', 0)):,.2f}",
+            f"{cur_sym}{float(inv.get('balance_due', 0)):,.2f}",
+        ])
+    if len(data) == 1:
+        data.append(["—", "No invoices yet", "", "", "", ""])
+    tbl = Table(data, colWidths=[2.6 * cm, 3 * cm, 2.4 * cm, 2.6 * cm, 2.6 * cm, 2.6 * cm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F0EA")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#57534E")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
+        ("PADDING", (0, 0), (-1, -1), 5),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E7E5DF")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAFAF7")]),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 12))
+
+    generated_on = datetime.now(timezone.utc).astimezone().strftime("%d %b %Y")
+    story.append(Paragraph(
+        f"Generated on {generated_on} via Apka Munim &middot; This is a system-generated statement.",
+        styles["Small"],
+    ))
+    doc.build(story)
+    buf.seek(0)
+
+    filename = f"statement-{(party.get('name') or 'party').replace(' ', '_')}.pdf"
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+# ----- GSTIN lookup (structural extraction) -----
+_GSTIN_STATE_CODES = {
+    "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab",
+    "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi",
+    "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim",
+    "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram",
+    "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal",
+    "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh",
+    "24": "Gujarat", "25": "Daman and Diu", "26": "Dadra and Nagar Haveli",
+    "27": "Maharashtra", "28": "Andhra Pradesh (Old)", "29": "Karnataka",
+    "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu",
+    "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana",
+    "37": "Andhra Pradesh", "38": "Ladakh",
+}
+
+_GSTIN_ENTITY_TYPES = {
+    "1": "Proprietor / Individual", "2": "HUF", "3": "Firm / Partnership",
+    "4": "LLP", "5": "Association", "6": "Society", "7": "Public Limited",
+    "8": "Private Limited", "9": "Government", "A": "Local Authority",
+    "B": "Trust", "C": "AOP / BOI", "F": "FCRA / Foreign LLP",
+    "G": "Government Body", "H": "HUF", "J": "Artificial Judicial Person",
+    "K": "Others", "L": "Local Authority", "P": "Individual (Proprietor)",
+    "T": "Trust",
+}
+
+_GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
+
+
+@api.get("/gstin/lookup/{gstin}")
+@limiter.limit("30/minute")
+async def gstin_lookup(request: Request, gstin: str, user=Depends(get_current_user)):
+    """
+    Structural GSTIN parse — extracts state, PAN, entity type & holder initial
+    from the 15-character GSTIN itself. No external API needed. Returns 400
+    if the format is invalid.
+
+    A future paid-API integration (GSTN / ClearTax / IRIS) can enrich this
+    with the legal name & registered address without changing this contract.
+    """
+    g = (gstin or "").strip().upper()
+    if not _GSTIN_REGEX.match(g):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid GSTIN format. Expected 15 chars — 2 state + 10 PAN + 1 entity + Z + 1 checksum.",
+        )
+    state_code = g[0:2]
+    pan = g[2:12]
+    entity_char = g[12]
+    holder = pan[3]  # 4th char of PAN: entity holder type
+
+    return {
+        "gstin": g,
+        "valid": True,
+        "state_code": state_code,
+        "state_name": _GSTIN_STATE_CODES.get(state_code, "Unknown"),
+        "pan": pan,
+        "entity_type": _GSTIN_ENTITY_TYPES.get(entity_char, "Unknown"),
+        "holder_type_char": holder,
+        # Legal name lookup requires a paid GST API — surfaced explicitly so
+        # the UI can prompt the user to fill it manually until a key is wired.
+        "legal_name": None,
+        "trade_name": None,
+        "address": None,
+        "note": "State & PAN extracted from GSTIN. Full business name lookup requires a paid GST API.",
+    }
+
+
 @api.get("/billing/dashboard")
 async def billing_dashboard(user=Depends(get_current_user)):
     owner = user["current_ledger_id"]

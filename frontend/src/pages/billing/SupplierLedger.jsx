@@ -171,7 +171,7 @@ export default function SupplierLedger() {
                   <tr
                     key={r.id}
                     className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
-                    onClick={() => navigate(`/billing/parties?id=${r.id}`)}
+                    onClick={() => navigate(`/billing/parties/${r.id}`)}
                     data-testid={`supplier-ledger-row-${r.id}`}
                   >
                     <td className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">

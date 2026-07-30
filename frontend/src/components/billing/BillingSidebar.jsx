@@ -57,7 +57,7 @@ const sections = [
     label: "Purchase",
     icon: ShoppingBag,
     children: [
-      { label: "Purchase Bills", to: "/billing/invoices?type=purchase" },
+      { label: "Purchase Bills", to: "/billing/purchase-bills" },
       { label: "Purchase Orders", to: "/billing/purchase-orders" },
       { label: "Debit Notes", to: "/billing/debit-notes" },
     ],
