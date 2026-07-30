@@ -137,6 +137,28 @@ export default function Udhaar() {
     }
   };
 
+  const remindAll = async () => {
+    const pending = [...lene, ...dene].filter((u) => u.phone);
+    if (pending.length === 0) {
+      toast.error("Kisi bhi pending udhaar mein phone number nahi hai");
+      return;
+    }
+    if (!window.confirm(`${pending.length} logon ko WhatsApp reminder bhejein? Har ek naya tab kholega.`)) return;
+    let opened = 0;
+    for (const u of pending) {
+      const isLene = u.type === "lene";
+      const msg = isLene
+        ? `Namaste ${u.person_name}, aapse ₹${u.amount} lena baaki hai. Kripya jald settle kariye. — Apka Munim`
+        : `Namaste ${u.person_name}, aapko ₹${u.amount} dena baaki hai. — Apka Munim`;
+      const url = `https://wa.me/${u.phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`;
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+      if (w) opened += 1;
+      // Small delay so browsers don't block subsequent tabs
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    toast.success(`${opened} reminders opened. Har tab mein Send dabao.`);
+  };
+
   const lene = rows.filter((r) => r.type === "lene" && r.status === "pending");
   const dene = rows.filter((r) => r.type === "dene" && r.status === "pending");
   const settled = rows.filter((r) => r.status === "settled");
@@ -204,6 +226,25 @@ export default function Udhaar() {
           <Plus className="w-4 h-4 mr-1" /> Add Udhaar
         </Button>
       </div>
+
+      {(lene.length + dene.length) > 0 && (
+        <div className="bg-[#25D366]/10 border border-[#25D366]/30 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            <div className="font-semibold text-[#1C1917]">Overdue reminders</div>
+            <div className="text-xs text-[#57534E]">
+              {[...lene, ...dene].filter((u) => u.phone).length} logon ke paas phone number hai —
+              ek click mein sabko WhatsApp par yaad dilaao.
+            </div>
+          </div>
+          <Button
+            onClick={remindAll}
+            data-testid="udhaar-remind-all-btn"
+            className="bg-[#25D366] hover:bg-[#1DA851] text-white rounded-full"
+          >
+            <Bell className="w-4 h-4 mr-1" /> Remind All on WhatsApp
+          </Button>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-[#4A7C59]/10 border border-[#4A7C59]/20 rounded-xl p-5">

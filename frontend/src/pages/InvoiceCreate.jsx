@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail, Edit3 } from "lucide-react";
+import { FileText, Plus, Trash2, Printer, Save, ArrowLeft, MessageCircle, Mail, Edit3, ShieldCheck, Repeat } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 const INVOICE_TYPES = [
   { key: "tax", label: "Tax Invoice" },
@@ -55,7 +56,10 @@ export default function InvoiceCreate() {
     notes: "",
     terms: "Thank you for your business!",
     invoice_date: new Date().toISOString().slice(0, 10),
+    irn: "",
+    irn_qr: "",
   });
+  const [recurring, setRecurring] = useState({ enabled: false, day_of_month: 1 });
 
   useEffect(() => {
     if (isView) {
@@ -163,6 +167,29 @@ export default function InvoiceCreate() {
         ? await http.patch(`/billing/invoices/${id}`, payload)
         : await http.post("/billing/invoices", payload);
       toast.success(`Invoice ${data.invoice_number} ${isEdit ? "updated" : "saved"}!`);
+      // Optionally create a monthly recurring template for new invoices
+      if (!isEdit && recurring.enabled) {
+        try {
+          await http.post("/billing/recurring-invoices", {
+            invoice_type: payload.invoice_type,
+            customer_id: payload.customer_id,
+            customer_name: payload.customer_name,
+            items: payload.items,
+            discount_amount: payload.discount_amount,
+            shipping: payload.shipping,
+            gst_mode: payload.gst_mode,
+            payment_mode: "credit",
+            account_id: payload.account_id,
+            notes: payload.notes,
+            terms: payload.terms,
+            day_of_month: Number(recurring.day_of_month) || 1,
+            enabled: true,
+          });
+          toast.success(`Monthly recurring set — auto-bills every ${recurring.day_of_month} of the month`);
+        } catch (rerr) {
+          toast.error("Invoice saved but recurring template failed");
+        }
+      }
       nav(`/billing/invoices/${data.id}/view`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Save failed");
@@ -350,6 +377,48 @@ export default function InvoiceCreate() {
             </div>
           )}
 
+          {/* UPI QR — auto-generated from company UPI ID if set */}
+          {company.upi_id && invoice.balance_due > 0 && (
+            <div className="mt-6 border border-[#E7E5DF] rounded-lg p-4 flex items-center gap-4 page-break-inside-avoid">
+              <div className="shrink-0 bg-white p-1 border border-[#E7E5DF] rounded">
+                <QRCodeSVG
+                  value={`upi://pay?pa=${encodeURIComponent(company.upi_id)}&pn=${encodeURIComponent(company.upi_name || company.company_name || "Payee")}&am=${Number(invoice.balance_due || 0).toFixed(2)}&cu=INR&tn=${encodeURIComponent("Invoice " + invoice.invoice_number)}`}
+                  size={112}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+              <div className="text-xs">
+                <div className="text-[10px] uppercase text-[#78716C] tracking-wider font-bold">Scan &amp; Pay via UPI</div>
+                <div className="font-mono text-sm text-[#1C1917] mt-0.5">{company.upi_id}</div>
+                {(company.upi_name || company.company_name) && (
+                  <div className="text-[11px] text-[#57534E]">{company.upi_name || company.company_name}</div>
+                )}
+                <div className="mt-1 font-heading font-bold text-[#2A4F4F]">Amount: {formatMoney(invoice.balance_due, cur)}</div>
+                <div className="text-[10px] text-[#78716C] mt-1">Works in PhonePe, GPay, Paytm and any UPI app.</div>
+              </div>
+            </div>
+          )}
+
+          {/* E-Invoice IRN (GST government-signed) */}
+          {(invoice.irn || invoice.irn_qr) && (
+            <div className="mt-4 border border-[#2A4F4F]/30 rounded-lg p-3 bg-[#2A4F4F]/5 flex items-start gap-3 page-break-inside-avoid">
+              {invoice.irn_qr ? (
+                <img src={invoice.irn_qr} alt="IRN QR" className="h-24 w-24 object-contain bg-white border border-[#E7E5DF] rounded p-1 shrink-0" />
+              ) : null}
+              <div className="text-xs min-w-0">
+                <div className="text-[10px] uppercase text-[#2A4F4F] tracking-wider font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Government-Signed e-Invoice
+                </div>
+                {invoice.irn && (
+                  <div className="font-mono break-all text-[11px] leading-snug text-[#1C1917] mt-1">
+                    IRN: {invoice.irn}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* TERMS & CONDITIONS FOOTER */}
           {(invoice.terms || company.invoice_footer) && (
             <div className="mt-8 pt-4 border-t border-[#E7E5DF] text-xs text-[#57534E] space-y-2 page-break-inside-avoid">
@@ -487,6 +556,67 @@ export default function InvoiceCreate() {
             <Label>Terms & Conditions</Label>
             <Textarea rows={2} value={form.terms} onChange={(e) => setForm({ ...form, terms: e.target.value })} />
           </div>
+          {(form.invoice_type === "gst" || form.invoice_type === "tax") && (
+            <div className="pt-2 border-t border-[#E7E5DF] space-y-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#2A4F4F]" />
+                <Label className="text-xs font-bold uppercase tracking-wider text-[#78716C]">E-Invoice (Optional)</Label>
+              </div>
+              <div>
+                <Label className="text-[10px]">IRN (Invoice Reference Number)</Label>
+                <Input value={form.irn} onChange={(e) => setForm({ ...form, irn: e.target.value })}
+                  data-testid="invoice-irn-input"
+                  placeholder="64-char IRN from GST portal" className="font-mono text-xs" />
+              </div>
+              <div>
+                <Label className="text-[10px]">IRN QR (upload signed QR image)</Label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  data-testid="invoice-irn-qr-upload"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    if (f.size > 1024 * 1024) { toast.error("File 1MB se kam honi chahiye"); return; }
+                    const r = new FileReader();
+                    r.onload = () => setForm((s) => ({ ...s, irn_qr: r.result }));
+                    r.readAsDataURL(f);
+                  }}
+                  className="text-xs mt-1"
+                />
+                {form.irn_qr && <img src={form.irn_qr} alt="irn qr" className="h-16 mt-1 border border-[#E7E5DF] rounded" />}
+              </div>
+            </div>
+          )}
+          {!isEdit && (
+            <div className="pt-2 border-t border-[#E7E5DF]">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox"
+                  data-testid="recurring-toggle"
+                  checked={recurring.enabled}
+                  onChange={(e) => setRecurring((s) => ({ ...s, enabled: e.target.checked }))}
+                  className="w-4 h-4 accent-[#2A4F4F]" />
+                <Repeat className="w-4 h-4 text-[#2A4F4F]" />
+                <span className="text-sm font-semibold text-[#1C1917]">Save as monthly recurring</span>
+              </label>
+              {recurring.enabled && (
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <span className="text-[#78716C]">Auto-generate on day</span>
+                  <select
+                    value={recurring.day_of_month}
+                    onChange={(e) => setRecurring((s) => ({ ...s, day_of_month: Number(e.target.value) }))}
+                    data-testid="recurring-day-select"
+                    className="h-8 px-2 border border-[#E7E5DF] rounded-md bg-white"
+                  >
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                  <span className="text-[#78716C]">of every month</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-[#E7E5DF] rounded-xl p-4 space-y-3">

@@ -119,6 +119,7 @@ function CompanyInfoSection({ Section }) {
   const [info, setInfo] = useState({
     company_name: "", gstin: "", phone: "", email: "", address: "",
     logo: "", signature: "", invoice_footer: "",
+    upi_id: "", upi_name: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -186,9 +187,19 @@ function CompanyInfoSection({ Section }) {
             {info.signature && <img src={info.signature} alt="signature" className="mt-2 h-14 object-contain rounded" />}
           </div>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><Label>UPI ID (for Scan & Pay QR on invoices)</Label>
+            <Input value={info.upi_id} onChange={(e) => setInfo({ ...info, upi_id: e.target.value })}
+              data-testid="settings-upi-id-input" placeholder="yourname@okhdfc" />
+          </div>
+          <div><Label>UPI Payee Name (as shown when scanned)</Label>
+            <Input value={info.upi_name} onChange={(e) => setInfo({ ...info, upi_name: e.target.value })}
+              data-testid="settings-upi-name-input" placeholder="ABC Traders" />
+          </div>
+        </div>
         <div><Label>Invoice Footer (optional)</Label>
           <Input value={info.invoice_footer} onChange={(e) => setInfo({ ...info, invoice_footer: e.target.value })}
-            placeholder="e.g. Bank details / Payment QR link" />
+            placeholder="e.g. Bank details / Terms" />
         </div>
         <Button onClick={save} disabled={saving} data-testid="save-company-info"
           className="bg-[#2A4F4F] hover:bg-[#1F3939] text-white">

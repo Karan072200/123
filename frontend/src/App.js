@@ -35,6 +35,7 @@ import KidsMoney from './pages/KidsMoney';
 import Splits from './pages/Splits';
 import Invoices from './pages/Invoices';
 import InvoiceCreate from './pages/InvoiceCreate';
+import RecurringInvoices from './pages/RecurringInvoices';
 import Premium from './pages/Premium';
 import Settings from './pages/Settings';
 import Privacy from './pages/Privacy';
@@ -117,6 +118,8 @@ export default function App() {
               <Route path="/billing/invoices" element={<ProtectedBillingRoute><Invoices /></ProtectedBillingRoute>} />
               <Route path="/billing/invoices/new" element={<ProtectedBillingRoute><InvoiceCreate /></ProtectedBillingRoute>} />
               <Route path="/billing/invoices/:id/edit" element={<ProtectedBillingRoute><InvoiceCreate /></ProtectedBillingRoute>} />
+              <Route path="/billing/invoices/:id/view" element={<ProtectedBillingRoute><InvoiceCreate /></ProtectedBillingRoute>} />
+              <Route path="/billing/recurring-invoices" element={<ProtectedBillingRoute><RecurringInvoices /></ProtectedBillingRoute>} />
               <Route path="/billing/quotations" element={<ProtectedBillingRoute><Invoices type="quotation" /></ProtectedBillingRoute>} />
               <Route path="/billing/proforma" element={<ProtectedBillingRoute><Invoices type="proforma" /></ProtectedBillingRoute>} />
               <Route path="/billing/challans" element={<ProtectedBillingRoute><Invoices type="challan" /></ProtectedBillingRoute>} />

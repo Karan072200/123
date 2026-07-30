@@ -109,6 +109,8 @@ export default function BillingSubNav() {
             <DropdownMenuItem onClick={() => go("/billing/challans")}>Delivery Challans</DropdownMenuItem>
             <DropdownMenuItem onClick={() => go("/billing/sales-orders")}>Sales Orders</DropdownMenuItem>
             <DropdownMenuItem onClick={() => go("/billing/credit-notes")}>Credit Notes</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => go("/billing/recurring-invoices")}>Recurring Invoices</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

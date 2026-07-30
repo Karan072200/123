@@ -3726,6 +3726,9 @@ class InvoiceIn(BaseModel):
     invoice_date: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[str] = "final"
+    # E-Invoice (GST) fields
+    irn: Optional[str] = None
+    irn_qr: Optional[str] = None  # base64 data URL of the government-signed QR
 
 
 class PurchaseIn(BaseModel):
@@ -3948,6 +3951,7 @@ async def create_invoice(body: InvoiceIn, user=Depends(get_current_user)):
         "notes": body.notes, "terms": body.terms,
         "invoice_date": body.invoice_date or now, "due_date": body.due_date,
         "status": body.status or "final", "created_at": now,
+        "irn": body.irn or None, "irn_qr": body.irn_qr or None,
     }
     await db.invoices.insert_one(doc)
 
@@ -4028,6 +4032,8 @@ async def update_invoice(invoice_id: str, body: InvoiceIn, user=Depends(get_curr
         "invoice_date": body.invoice_date or old.get("invoice_date"),
         "due_date": body.due_date, "status": body.status or old.get("status", "final"),
         "updated_at": now,
+        "irn": body.irn if body.irn is not None else old.get("irn"),
+        "irn_qr": body.irn_qr if body.irn_qr is not None else old.get("irn_qr"),
     }
     await db.invoices.update_one({"id": invoice_id}, {"$set": updates})
 
@@ -4263,6 +4269,145 @@ async def export_excel(month: Optional[str] = None, user=Depends(require_premium
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="apka-munim-{month}.xlsx"'},
     )
+
+
+# ----- Recurring Invoice Templates -----
+class RecurringInvoiceIn(BaseModel):
+    invoice_type: str = "tax"
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    items: List[InvoiceItemIn]
+    discount_amount: Optional[float] = 0
+    shipping: Optional[float] = 0
+    gst_mode: str = "exclusive"
+    payment_mode: Optional[str] = "cash"
+    account_id: Optional[str] = None
+    notes: Optional[str] = None
+    terms: Optional[str] = None
+    day_of_month: int = 1  # 1..28
+    enabled: bool = True
+
+
+def _next_monthly_run_date(day_of_month: int, from_dt: Optional[datetime] = None) -> str:
+    base = from_dt or datetime.now(timezone.utc)
+    day = max(1, min(28, int(day_of_month or 1)))
+    # Next run: this month if not yet reached, else next month
+    if base.day < day:
+        nxt = base.replace(day=day)
+    else:
+        y, m = base.year, base.month + 1
+        if m > 12:
+            m = 1
+            y += 1
+        nxt = base.replace(year=y, month=m, day=day)
+    return nxt.date().isoformat()
+
+
+@api.get("/billing/recurring-invoices")
+async def list_recurring_invoices(user=Depends(get_current_user)):
+    return await db.recurring_invoices.find(
+        {"owner_id": user["current_ledger_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+
+
+@api.post("/billing/recurring-invoices")
+async def create_recurring_invoice(body: RecurringInvoiceIn, user=Depends(get_current_user)):
+    owner = user["current_ledger_id"]
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "owner_id": owner,
+        **body.dict(),
+        "next_run_date": _next_monthly_run_date(body.day_of_month, now),
+        "last_generated_at": None,
+        "generated_count": 0,
+        "created_at": now.isoformat(),
+    }
+    # Serialise items (list of pydantic-derived dicts)
+    doc["items"] = [it if isinstance(it, dict) else it.dict() for it in doc["items"]]
+    await db.recurring_invoices.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/billing/recurring-invoices/{template_id}")
+async def update_recurring_invoice(template_id: str, body: dict, user=Depends(get_current_user)):
+    allowed = {"enabled", "day_of_month", "notes", "terms"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if "day_of_month" in updates:
+        updates["next_run_date"] = _next_monthly_run_date(updates["day_of_month"])
+    r = await db.recurring_invoices.update_one(
+        {"id": template_id, "owner_id": user["current_ledger_id"]},
+        {"$set": updates},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"ok": True}
+
+
+@api.delete("/billing/recurring-invoices/{template_id}")
+async def delete_recurring_invoice(template_id: str, user=Depends(get_current_user)):
+    await db.recurring_invoices.delete_one(
+        {"id": template_id, "owner_id": user["current_ledger_id"]}
+    )
+    return {"ok": True}
+
+
+@api.post("/billing/recurring-invoices/run")
+async def run_recurring_invoices(user=Depends(get_current_user)):
+    """Generate invoices for every enabled template whose next_run_date <= today."""
+    owner = user["current_ledger_id"]
+    today = datetime.now(timezone.utc).date().isoformat()
+    templates = await db.recurring_invoices.find(
+        {"owner_id": owner, "enabled": True, "next_run_date": {"$lte": today}},
+        {"_id": 0},
+    ).to_list(200)
+    generated = []
+    for t in templates:
+        items = t.get("items", [])
+        totals = _compute_invoice_totals(
+            [dict(it) for it in items],
+            t.get("discount_amount", 0),
+            t.get("shipping", 0),
+            t.get("gst_mode", "exclusive"),
+        )
+        now = datetime.now(timezone.utc)
+        inv_no = await _next_invoice_number(owner, t.get("invoice_type", "tax"), now)
+        inv_id = str(uuid.uuid4())
+        doc = {
+            "id": inv_id, "owner_id": owner, "invoice_number": inv_no,
+            "invoice_type": t.get("invoice_type", "tax"),
+            "customer_id": t.get("customer_id"),
+            "customer_name": t.get("customer_name"),
+            "items": items,
+            "gst_mode": t.get("gst_mode", "exclusive"),
+            **totals,
+            "paid_amount": 0.0,
+            "balance_due": totals["total"],
+            "payment_mode": t.get("payment_mode", "credit"),
+            "account_id": t.get("account_id"),
+            "notes": t.get("notes"),
+            "terms": t.get("terms"),
+            "invoice_date": now.isoformat(),
+            "due_date": None,
+            "status": "final",
+            "created_at": now.isoformat(),
+            "irn": None, "irn_qr": None,
+            "generated_from_template": t["id"],
+        }
+        await db.invoices.insert_one(doc)
+        await db.recurring_invoices.update_one(
+            {"id": t["id"]},
+            {
+                "$set": {
+                    "last_generated_at": now.isoformat(),
+                    "next_run_date": _next_monthly_run_date(t.get("day_of_month", 1), now),
+                },
+                "$inc": {"generated_count": 1},
+            },
+        )
+        generated.append({"template_id": t["id"], "invoice_id": inv_id, "invoice_number": inv_no})
+    return {"generated": generated, "count": len(generated)}
 
 
 # ----- Public account deletion request (unauthenticated form) -----
