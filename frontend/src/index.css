@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========= PRINT: sirf Invoice hi print ho ========= */
+@media print {
+  @page { margin: 10mm; size: A4 portrait; }
+
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Sab kuch hide karo by default */
+  body * { visibility: hidden !important; }
+
+  /* Sirf invoice-view aur uske andar ki cheezein visible */
+  [data-testid="invoice-view"],
+  [data-testid="invoice-view"] * { visibility: visible !important; }
+
+  /* Invoice ko top pe fix karo — A4 fit ke liye */
+  [data-testid="invoice-view"] {
+    position: absolute !important;
+    left: 0 !important; top: 0 !important;
+    right: 0 !important;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 8mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    font-size: 11pt !important;
+    box-sizing: border-box !important;
+  }
+
+  [data-testid="invoice-view"] table {
+    width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+  }
+  [data-testid="invoice-view"] table th,
+  [data-testid="invoice-view"] table td {
+    padding: 4pt 6pt !important;
+    word-break: break-word !important;
+  }
+  [data-testid="invoice-view"] h1 { font-size: 16pt !important; }
+  [data-testid="invoice-view"] img { max-height: 40mm !important; object-fit: contain !important; }
+
+  /* Sidebar, FAB, ChatWidget, TopBars — hide */
+  aside, nav, [data-testid="quick-add-fab"],
+  [data-testid="chat-widget-open-btn"],
+  [data-testid="chat-widget-window"],
+  [data-testid="global-search-trigger"],
+  [data-testid="mobile-global-search-trigger"] {
+    display: none !important;
+  }
+
+  /* Prevent page overflow */
+  * { overflow: visible !important; }
+}
+
+body {
+    margin: 0;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #F9F8F6;
+    color: #1C1917;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.font-heading {
+    font-family: 'Manrope', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+}
+
+code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@layer base {
+    :root {
+        --background: 40 20% 97%;
+        --foreground: 24 10% 10%;
+        --card: 0 0% 100%;
+        --card-foreground: 24 10% 10%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 24 10% 10%;
+        --primary: 180 30% 24%;
+        --primary-foreground: 40 20% 97%;
+        --secondary: 40 15% 92%;
+        --secondary-foreground: 24 10% 10%;
+        --muted: 40 15% 94%;
+        --muted-foreground: 25 6% 45%;
+        --accent: 40 15% 92%;
+        --accent-foreground: 24 10% 10%;
+        --destructive: 12 65% 58%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 40 15% 88%;
+        --input: 40 15% 88%;
+        --ring: 180 30% 24%;
+        --radius: 0.6rem;
+    }
+    .dark {
+        --background: 24 8% 8%;
+        --foreground: 40 15% 92%;
+        --card: 24 8% 12%;
+        --card-foreground: 40 15% 92%;
+        --popover: 24 8% 12%;
+        --popover-foreground: 40 15% 92%;
+        --primary: 180 30% 55%;
+        --primary-foreground: 24 10% 10%;
+        --secondary: 24 6% 16%;
+        --secondary-foreground: 40 15% 92%;
+        --muted: 24 6% 16%;
+        --muted-foreground: 25 6% 65%;
+        --accent: 24 6% 16%;
+        --accent-foreground: 40 15% 92%;
+        --destructive: 12 65% 55%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 24 6% 22%;
+        --input: 24 6% 22%;
+        --ring: 180 30% 55%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Manrope', system-ui, sans-serif;
+    }
+}
+
+/* subtle grain overlay for auth pages */
+.paper-grain {
+    background-image:
+        radial-gradient(circle at 20% 30%, rgba(74, 124, 89, 0.06) 0px, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(232, 179, 101, 0.08) 0px, transparent 40%);
+}
+.dark .paper-grain {
+    background-image:
+        radial-gradient(circle at 20% 30%, rgba(74, 124, 89, 0.12) 0px, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(232, 179, 101, 0.10) 0px, transparent 40%);
+}
+
+/* stagger fade-in for cards */
+@keyframes softRise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.soft-rise {
+    animation: softRise 0.5s ease-out both;
+}
+
+/* ---- Dark mode overrides for hardcoded arbitrary color classes ----
+   Rather than touching every component we remap the specific hex colours
+   used across the app when the .dark class is on <html>. */
+.dark body { background: #151312; color: #EAE7DF; }
+
+/* Surfaces (light -> dark) */
+.dark .bg-white { background-color: #1E1B1A !important; }
+.dark .bg-\[\#F9F8F6\] { background-color: #151312 !important; }
+.dark .bg-\[\#F2F0EA\] { background-color: #262220 !important; }
+.dark .bg-\[\#FAF9F5\] { background-color: #201D1B !important; }
+
+/* Borders */
+.dark .border-\[\#E7E5DF\] { border-color: #2C2825 !important; }
+.dark .divide-\[\#E7E5DF\] > :not([hidden]) ~ :not([hidden]) { border-color: #2C2825 !important; }
+
+/* Text */
+.dark .text-\[\#1C1917\] { color: #EAE7DF !important; }
+.dark .text-\[\#57534E\] { color: #B9B3AA !important; }
+.dark .text-\[\#78716C\] { color: #9C958B !important; }
+.dark .text-\[\#A8A29E\] { color: #7C7670 !important; }
+
+/* Hover states */
+.dark .hover\:bg-\[\#F2F0EA\]:hover { background-color: #2A2624 !important; }
+.dark .hover\:bg-\[\#F9F8F6\]:hover { background-color: #201D1B !important; }
+
+/* Muted paper card in auth / sidebar */
+.dark .bg-white\/60 { background-color: rgba(30, 27, 26, 0.6) !important; }
+
+/* Ensure inputs have proper dark bg via shadcn theme tokens */
+.dark input, .dark textarea, .dark select {
+    color-scheme: dark;
+}
+
+/* Keep brand accents (teal, terracotta, honey, sage) visually consistent -
+   they are already legible on both backgrounds so we don't remap them. */

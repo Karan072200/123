@@ -1,0 +1,205 @@
+import React, { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CATEGORIES, http, ensureNotificationPermission, showBudgetNotification } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
+import VoiceInput from "@/components/VoiceInput";
+
+export default function AddTransactionDialog({ open, onOpenChange, accounts, onDone, existing }) {
+  const isEdit = Boolean(existing);
+  const { user } = useAuth();
+  const [type, setType] = useState("expense");
+  const [accountId, setAccountId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("Food");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [categorySuggestions, setCategorySuggestions] = useState([]);
+
+  // Auto-suggest category based on note (learns from history)
+  useEffect(() => {
+    const q = (note || "").trim();
+    if (q.length < 3 || isEdit) {
+      setCategorySuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await http.get("/categories/suggest", { params: { q } });
+        setCategorySuggestions(data?.suggestions || []);
+      } catch {
+        setCategorySuggestions([]);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [note, isEdit]);
+
+  useEffect(() => {
+    if (open) {
+      if (existing) {
+        setType(existing.type);
+        setAccountId(existing.account_id);
+        setAmount(String(existing.amount));
+        setCategory(existing.category);
+        setNote(existing.note || "");
+      } else {
+        setType("expense");
+        setAmount("");
+        setNote("");
+        setCategory("Food");
+        setAccountId(accounts?.[0]?.id || "");
+      }
+    }
+  }, [open, accounts, existing]);
+
+  useEffect(() => {
+    if (!isEdit) setCategory(CATEGORIES[type][0]);
+  }, [type, isEdit]);
+
+  const submit = async () => {
+    if (!accountId) return toast.error("Pehle ek account banao");
+    if (!amount || Number(amount) <= 0) return toast.error("Sahi amount daalo");
+    setSaving(true);
+    try {
+      const payload = { account_id: accountId, type, amount: Number(amount), category, note };
+      if (isEdit) {
+        await http.patch(`/transactions/${existing.id}`, payload);
+        toast.success("Update ho gaya!");
+      } else {
+        const { data } = await http.post("/transactions", payload);
+        toast.success(type === "income" ? "Income add ho gayi!" : "Kharcha record ho gaya!");
+        // Budget breach alerts
+        if (data?.budget_alerts?.length > 0) {
+          await ensureNotificationPermission();
+          data.budget_alerts.forEach((a) => {
+            toast(
+              a.level === "over"
+                ? `Budget cross ho gaya: ${a.category} (${a.percent}%)`
+                : `Budget alert: ${a.category} ${a.percent}% use ho gaya`,
+              { duration: 6000 }
+            );
+            showBudgetNotification(a, user?.currency || "INR");
+          });
+        }
+      }
+      onOpenChange(false);
+      onDone?.();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Nahi ho paya");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-heading">{isEdit ? "Edit Transaction" : "Naya Transaction"}</DialogTitle>
+          <DialogDescription>{isEdit ? "Details update karo." : "Income ya kharcha add karo."}</DialogDescription>
+        </DialogHeader>
+
+        <Tabs value={type} onValueChange={setType} className="w-full">
+          <TabsList className="grid grid-cols-2 w-full bg-[#F2F0EA]">
+            <TabsTrigger value="expense" data-testid="txn-type-expense"
+              className="data-[state=active]:bg-[#D96C52] data-[state=active]:text-white">Kharcha</TabsTrigger>
+            <TabsTrigger value="income" data-testid="txn-type-income"
+              className="data-[state=active]:bg-[#4A7C59] data-[state=active]:text-white">Aaya</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {!isEdit && (
+          <VoiceInput onParsed={(d) => {
+            if (d.amount) setAmount(String(d.amount));
+            if (d.type) setType(d.type);
+            if (d.category) {
+              const cats = CATEGORIES[d.type || "expense"] || [];
+              if (cats.includes(d.category)) setCategory(d.category);
+              else setCategory(cats[0] || "Other");
+            }
+            if (d.note) setNote(d.note);
+          }} />
+        )}
+
+        <div className="space-y-3 mt-2">
+          <div>
+            <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Amount</Label>
+            <Input type="number" min="0" step="0.01" value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              data-testid="txn-amount-input"
+              className="mt-1.5" placeholder="0.00" />
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Account</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger className="mt-1.5" data-testid="txn-account-select">
+                <SelectValue placeholder="Account choose karo" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id} data-testid={`txn-account-option-${a.id}`}>
+                    {a.name} ({a.type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Category</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="mt-1.5" data-testid="txn-category-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES[type].map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold tracking-widest uppercase text-[#78716C]">Note (optional)</Label>
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)}
+              data-testid="txn-note-input"
+              className="mt-1.5" rows={2} placeholder="Kya liya, kaha liya…" />
+            {categorySuggestions.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap" data-testid="category-suggestions">
+                <span className="text-xs text-[#78716C]">💡 Aapne pehle use ki:</span>
+                {categorySuggestions.map((s) => (
+                  <button
+                    key={s.category}
+                    type="button"
+                    onClick={() => setCategory(s.category)}
+                    data-testid={`suggest-cat-${s.category}`}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      category === s.category
+                        ? "bg-[#2A4F4F] text-white border-[#2A4F4F]"
+                        : "bg-[#F2F0EA] text-[#57534E] border-[#E7E5DF] hover:bg-[#E7E5DF]"
+                    }`}
+                  >
+                    {s.category} <span className="opacity-60">×{s.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Button onClick={submit} disabled={saving}
+            data-testid="txn-submit-btn"
+            className="w-full bg-[#2A4F4F] hover:bg-[#1F3B3B] text-white rounded-full h-11">
+            {saving ? "Save ho raha…" : isEdit ? "Update karo" : "Save karo"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

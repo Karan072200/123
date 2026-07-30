@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.apkamunim.app",
+      "sha256_cert_fingerprints": [
+        "6D:60:52:54:08:72:39:E9:14:FF:5F:86:72:14:05:2C:25:5E:CD:34:C1:F7:48:7F:88:91:2D:C6:CB:3D:1C:79"
+      ]
+    }
+  }
+]
