@@ -22,31 +22,48 @@ Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + Mongo
 Backend cleanup, duplicate endpoints removal, rate limiting, FY-aware invoice numbering, UPI QR on PDF, E-invoice IRN fields, WhatsApp share, Bank CSV import, recurring invoices, multi-language support.
 
 ## ERP Billing Workspace — Phase 1
-Standalone sidebar + header, 4 new pages (Sales Returns, Customer Ledger, Supplier Ledger, Inventory Adjustments). **Iteration 11: 100% pass.**
+Standalone sidebar + header, 4 new pages. **Iteration 11: 100% pass.**
 
 ## ERP Billing Workspace — Phase 2
 Convert Documents endpoint + UI, PartyProfile, Purchase Bills first-class page, Statement PDF, GSTIN structural autofill. **Iteration 12: 100% pass.**
 
 ## ERP Billing Workspace — Phase 3 (gap sweep)
-Clickable Parties cards, sidebar routes no longer exit workspace, `Purchase Bill` + `Sales Order` types in InvoiceCreate dropdown, Statement PDF button on ledger rows, `partyStatement.js` shared util. **Iteration 13: 100% pass.**
+Clickable Parties cards, sidebar routes no longer exit workspace, Purchase Bill + Sales Order in InvoiceCreate types, Statement PDF button on ledger rows. **Iteration 13: 100% pass.**
 
-## ERP Billing Workspace — Phase 4 (current, iteration 14: 100% pass)
-1. **Convert AlertDialog**: `window.confirm` swapped for a shadcn `<AlertDialog>` (`convert-dialog` + `convert-dialog-cancel` + `convert-dialog-confirm` testids). Nice modal with title, Hinglish description, disabled state during POST, then navigates to the newly-created tax invoice for editing.
-2. **Auto WhatsApp Reminders**:
-   - `PATCH /api/billing/settings/reminders` + `GET /api/billing/settings/reminders` — per-user toggle + interval (1-90 days, default 7).
-   - `POST /api/billing/parties/{id}/send-reminder` — 30/min rate-limited; returns pre-built `wa.me/{phone}?text=...` URL + records `last_reminder_at`; 400 if no outstanding, 404 if unknown party.
-   - Weekly scheduler `_weekly_whatsapp_reminder_job` (Mon 09:00 IST). For each user with `reminders_enabled`, finds customers with outstanding > 0 whose last reminder is older than the configured interval, emails owner a click-to-WhatsApp digest and stamps `last_reminder_at` on each party so the next run waits `interval` days.
-   - PartyProfile "Send Reminder" button (BellRing, data-testid `party-profile-reminder-btn`) — visible ONLY when `isCustomer && totals.outstanding > 0`; clicking POSTs to the endpoint and opens WhatsApp Web in a new tab.
-3. **Security — Key Rotation Guide**: `/app/SECURITY_KEY_ROTATION.md` (4.8 KB, Hinglish) with step-by-step for JWT → Google OAuth secret → Groq → Resend → MongoDB Atlas.
+## ERP Billing Workspace — Phase 4
+Convert AlertDialog, Auto WhatsApp Reminders (Mon 09:00 IST scheduler + manual per-party endpoint + PartyProfile Send Reminder button), Security Key Rotation guide. **Iteration 14: 100% pass.**
 
-Post-testing cosmetic fixes: scheduler startup log now correctly reports both cron times; interval clamp semantics fixed for `0` input.
+## Google Sign-In "origin not allowed" fix (current, iteration 17: 100% pass)
+
+**Symptom**: User reported `bhai google se login nahi ho raha`. Browser console showed `[GSI_LOGGER]: The given origin is not allowed for the given client ID` — the preview URL `https://finance-hardening.preview.emergentagent.com` is NOT in Google Cloud Console's Authorized JavaScript origins list (only `apkamunim.com` / `www.apkamunim.com` are).
+
+**Root cause**: Config-side, only the user can fix. Main agent has no Google Cloud Console access.
+
+**Code-side mitigation** — three iterations landed the right approach:
+- iter15: added inline diagnostic banner `<GoogleAuthErrorHelp/>` + guide doc `/app/GOOGLE_OAUTH_FIX.md`.
+- iter15 finding: `@react-oauth/google`'s `onError` doesn't fire for GSI origin blocks — banner never surfaced.
+- iter16: switched trigger to a `console.error` sniffer hook `useGsiOriginErrorDetector`.
+- iter16 finding: GSI writes the log from inside a **cross-origin iframe** (`ssl.gstatic.com`), so the parent-frame `console.error` patch never catches it.
+- iter17: switched to a **host-allowlist** trigger — new util `/app/frontend/src/lib/googleOrigins.js` exports `KNOWN_GOOD_GOOGLE_HOSTS = {apkamunim.com, www.apkamunim.com}` and `isKnownGoodGoogleOrigin()`. Login.jsx + Register.jsx render the banner proactively on any host outside the allowlist. Banner now has a dismiss (X) button that persists per-origin in `localStorage`.
+
+**Files**:
+- `/app/frontend/src/lib/googleOrigins.js` (new — host allowlist)
+- `/app/frontend/src/components/auth/GoogleAuthErrorHelp.jsx` (rewritten — dismiss + persistence)
+- `/app/frontend/src/pages/Login.jsx` + `Register.jsx` (use `isKnownGoodGoogleOrigin()`)
+- `/app/GOOGLE_OAUTH_FIX.md` — Hinglish step-by-step
+- `/app/memory/test_credentials.md` — updated with preview URL note
+
+**User action required**: Open `/app/GOOGLE_OAUTH_FIX.md` and add the preview origin to Google Cloud Console → Authorized JavaScript origins. 2-minute task.
 
 ## Backlog / Next
-- P1: **GST Name Lookup** — wire a paid GST API (Appyflow / ClearTax / IRIS / Masters India) so `/api/gstin/lookup` also returns legal name + address. Awaiting user's choice of provider + API key.
-- P1: Reminder Settings UI toggle in `/billing/settings` — endpoint is ready, needs a switch + interval slider.
-- P1: PartyProfile "Send Reminder" vs "WhatsApp" button — rename to clarify intent (reminder = overdue chase text; share = generic account summary).
-- P2: Purchase Bills server-side `?type=purchase` filter (currently client-side, caps at 500 invoices).
-- P2: server.py has grown past 5900 LOC — split into `routers/billing`, `services/email`, `services/scheduler` for maintainability.
+- P1: **User action** — add preview URL + all production origins to Google Cloud Console (see GOOGLE_OAUTH_FIX.md).
+- P1: **Rotate leaked keys** using SECURITY_KEY_ROTATION.md.
+- P1: **GST Name Lookup** — wire a paid GST API (Appyflow / ClearTax / IRIS / Masters India). Awaiting user's choice of provider + API key.
+- P1: Reminder Settings UI toggle in `/billing/settings` — endpoint ready, needs a switch + interval slider.
+- P1: Rename PartyProfile "Send Reminder" vs "WhatsApp" buttons for clarity.
+- P2: Purchase Bills server-side `?type=purchase` filter.
+- P2: server.py has grown past 5900 LOC — split into routers/services.
+- P2: Top-5 Overdue Customers widget on ERP dashboard.
+- P2: Reminder email should attach the Statement PDF, not just a WhatsApp link.
 - P2: Google Play Data Safety declaration audit.
 - P2: Automated MongoDB Atlas backups.
-- P2: **User to rotate leaked keys** using SECURITY_KEY_ROTATION.md.
