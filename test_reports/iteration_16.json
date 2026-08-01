@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 16 re-tests the console.error sniffer fix from iteration 15. Backend regression clean (4/4 pass, 1 skipped). Frontend PRIMARY TEST FAILS: banner does NOT auto-appear on /login or /register within 8s of page load, even though GSI logs the exact target message. Root cause: GSI writes '[GSI_LOGGER]: The given origin is not allowed for the given client ID.' from inside its cross-origin iframe (https://ssl.gstatic.com/.../credential_button_library), NOT from the parent window. The hook only patches window.console.error on the top frame, which is never invoked by iframe-internal logs. All other requirements verified positively: hook logic works when invoked from top window (banner appears, origin correct, copy+link work); negative case passes (unrelated errors don't trigger); cleanup restores previous console.error on unmount.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "useGsiOriginErrorDetector.js",
+        "issue": "Monkey-patching window.console.error on the parent frame does NOT intercept the real GSI '[GSI_LOGGER]: The given origin is not allowed' log, because that log is emitted from inside the cross-origin GSI iframe (ssl.gstatic.com/.../credential_button_library). The parent window's console.error is never invoked for iframe-internal logs. Result: banner does not auto-appear on /login or /register on the preview URL — the exact scenario the fix targets. Simulating console.error('[GSI_LOGGER]... origin is not allowed ...') from the parent window DOES trigger the banner correctly, confirming the hook itself is wired properly and only the trigger mechanism is wrong.",
+        "selector": "[data-testid=\"google-auth-error-help\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_google_auth_error.py",
+    "/app/test_reports/pytest/iteration16.xml"
+  ],
+  "action_items": [
+    "The console.error sniffer approach cannot detect the real GSI origin error because it fires inside a cross-origin iframe (ssl.gstatic.com). Recommended alternatives (any one): (a) Detect via the negative signal — set a short timer after mount (e.g. 3s) and if the GSI iframe button rendered but window.google?.accounts?.id is unusable OR the button iframe returned 403 (visible in DevTools Network to accounts.google.com/gsi/button), setGsiFailed(true). We observed the button iframe DOES 403 on the preview URL — that fetch failure is detectable via a Resource-Timing observer or by checking iframe onload/onerror. (b) Render the GoogleAuthErrorHelp banner as an always-visible low-key info hint whenever REACT_APP_GOOGLE_CLIENT_ID is set AND window.location.host is not one of the known-good production hosts (apkamunim.com, www.apkamunim.com). This is deterministic and doesn't rely on GSI internals. (c) Use google.accounts.id.prompt() with its notification callback (getNotDisplayedReason returns 'unregistered_origin' on this failure). Option (b) is simplest and most reliable given we already know the preview host is not whitelisted.",
+    "Consider also polling window.google?.accounts?.id after ~2s and, if absent OR button iframe failed to render (query iframe count in [data-testid='login-google-wrapper'] and check its src returns 403 via a fetch HEAD/no-cors), setGsiFailed(true)."
+  ],
+  "critical_code_review_comments": [
+    "Hook /app/frontend/src/hooks/useGsiOriginErrorDetector.js is clean, safely guards window, gracefully swallows onDetected errors, and cleanup restores previous console.error correctly. Only issue: architectural — it patches the wrong frame's console.",
+    "Positive-verified: when console.error('[GSI_LOGGER] ... origin is not allowed ...') is dispatched from the parent window, banner appears on both /login and /register, origin text is 'https://finance-hardening.preview.emergentagent.com', console link href='https://console.cloud.google.com/apis/credentials' with target='_blank'.",
+    "Match logic is correctly conservative: requires BOTH 'GSI_LOGGER' AND /origin is not allowed/i — verified 'random error' and '[GSI_LOGGER] FedCM prompt suppressed' do NOT trigger.",
+    "Cleanup on unmount is technically correct (restores whatever was there when the hook mounted, in our env that's Emergent's monitoring wrapper — not native, which is fine).",
+    "Register.jsx still bypasses AuthContext.googleLogin (calls fetch directly) — unchanged from iter15, still worth unifying with Login.jsx.",
+    "Backend /api/auth/google, /api/auth/login, /api/auth/register, /api/auth/me all healthy — no regression."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (4/4 executed, 1 skipped — PIN endpoint not discoverable)",
+    "frontend": "20% — PRIMARY goal (auto-appearing banner in real GSI failure) NOT achieved; hook secondary properties (logic, negative case, cleanup, UI, copy, link) all pass"
+  },
+  "test_credentials": "Fresh TEST_it15_* user registered per run via /api/auth/register.",
+  "seed_data_creation": "One TEST_it15_<uuid>@example.com created during backend regression run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Do NOT expect the current console.error sniffer to fire for real GSI origin errors — they emanate from cross-origin iframes (ssl.gstatic.com) and never invoke the parent window's console.error. To verify a future fix: (1) load /login on the preview URL, (2) wait ~5s with no interaction, (3) [data-testid='google-auth-error-help'] must be visible. Also verify negative case: page.evaluate(\"console.error('random')\") must NOT surface the banner. The GSI button iframe itself returns HTTP 403 for the preview origin — that network-level signal is a reliable alternative trigger. All banner testids: google-auth-error-help, google-auth-error-origin, google-auth-error-copy-btn, google-auth-error-console-link.",
+  "rca of the issue": "The fix assumes GSI's console.error call originates on the parent window's console object, but browser console output aggregates logs from ALL frames (parent + iframes). GSI's button renderer is loaded and executed inside a cross-origin iframe hosted at https://ssl.gstatic.com/_/gsi/_/js/.../credential_button_library. When that script calls console.error('[GSI_LOGGER]: The given origin ...'), it invokes the iframe's console.error — a completely separate JavaScript object from window.console.error in the parent (cross-origin isolation forbids the parent from accessing or wrapping it). Playwright's page.on('console') shows the message because it attaches to every frame's console, but our React app runs in the parent frame and its monkey-patch is scoped to the parent. Reproduction: open /login on the preview URL, wait 10s → GSI logs the origin error (confirmed via Playwright console listener with frame_url attribution to ssl.gstatic.com), banner never appears, window.console.error IS still the wrapped function (confirmed via .toString() — not native), but it is never called for the iframe-internal log. Mitigation: switch to iframe-load-failure detection (button iframe returns 403), host-allowlist heuristic (show banner unconditionally when host not in known-good list), or google.accounts.id.prompt notification callbacks."
+}

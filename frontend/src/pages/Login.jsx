@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { ShieldCheck, Eye, EyeOff, Lock, Mail, KeyRound, FileText, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import GoogleAuthErrorHelp from '../components/auth/GoogleAuthErrorHelp';
+import useGsiOriginErrorDetector from '../hooks/useGsiOriginErrorDetector';
 
 export default function Login() {
   const { login, loginWithPin, googleLogin } = useAuth();
@@ -17,6 +18,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [gsiFailed, setGsiFailed] = useState(false);
+  useGsiOriginErrorDetector(useCallback(() => setGsiFailed(true), []));
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();

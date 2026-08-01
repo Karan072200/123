@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/Passw
 import { GoogleLogin } from "@react-oauth/google";
 import { toast } from "sonner";
 import GoogleAuthErrorHelp from "@/components/auth/GoogleAuthErrorHelp";
+import useGsiOriginErrorDetector from "@/hooks/useGsiOriginErrorDetector";
 import useSEO from "@/hooks/useSEO";
 
 export default function Register() {
@@ -28,6 +29,7 @@ export default function Register() {
   const [currency, setCurrency] = useState("INR");
   const [loading, setLoading] = useState(false);
   const [gsiFailed, setGsiFailed] = useState(false);
+  useGsiOriginErrorDetector(useCallback(() => setGsiFailed(true), []));
 
   const submit = async (e) => {
     e.preventDefault();
