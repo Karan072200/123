@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 15 focused on GoogleAuthErrorHelp banner + backend /api/auth/google negative regression. Backend: 4/4 executed tests pass (1 skipped — PIN set endpoint not discoverable). Frontend: Login and Register pages render cleanly with NO banner initially (correct); component source has all required data-testids and correct href. IMPORTANT DESIGN GAP DISCOVERED: @react-oauth/google's GoogleLogin onError callback does NOT fire when GSI logs 'The given origin is not allowed for the given client ID' — GSI silently no-ops the click. So in practice on the preview URL the banner will never appear because gsiFailed is never set to true. The dead-code path needs a different trigger.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Login.jsx / Register.jsx GoogleLogin onError",
+        "issue": "GSI 'origin not allowed' does NOT invoke onError of @react-oauth/google GoogleLogin — GSI silently logs to console and no-ops the click. Confirmed by clicking the rendered GSI iframe button on the preview URL: banner never appears, only console shows [GSI_LOGGER] error. Consequence: the entire GoogleAuthErrorHelp banner is effectively unreachable for the exact scenario it was designed for.",
+        "selector": "[data-testid=\"login-google-wrapper\"] iframe / [data-testid=\"google-auth-error-help\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_google_auth_error.py",
+    "/app/test_reports/pytest/iteration15.xml"
+  ],
+  "action_items": [
+    "Change the banner trigger mechanism — onError from @react-oauth/google won't fire on GSI origin block. Options: (a) monkey-patch window.console.error inside a useEffect to sniff for '[GSI_LOGGER]' + 'origin is not allowed' and setGsiFailed(true); (b) render banner unconditionally (or via a small info icon) since we already know the preview origin isn't whitelisted; (c) use google.accounts.id.prompt() notification callbacks (getNotDisplayedReason / getSkippedReason). Recommended: option (a) — lightweight console sniffer with cleanup on unmount.",
+    "OPTIONAL: expose window.__setGsiFailed for future testing agents to simulate the failure without touching Google Cloud Console."
+  ],
+  "critical_code_review_comments": [
+    "GoogleAuthErrorHelp.jsx itself is well-implemented — proper data-testids, safe window guard, copy fallback, absolute console link.",
+    "Login.jsx onError sets gsiFailed AND shows a toast — both good — but the onError never fires for the target failure mode. Trigger is the bug, not the UI.",
+    "GOOGLE_OAUTH_FIX.md (3537 bytes) contains all required sections: 'Step-by-Step Fix', 'Which origins should be added permanently?', 'Common gotchas', 'Verification checklist'.",
+    "test_credentials.md correctly lists the preview URL under Authorized origins and links to GOOGLE_OAUTH_FIX.md.",
+    "Register.jsx onSuccess bypasses AuthContext.googleLogin (calls fetch directly) — inconsistent with Login.jsx which uses googleLogin(credential). Consider unifying so context state stays in sync post-Google-signup.",
+    "Backend /api/auth/google correctly returns 401 with detail 'Invalid Google token' for junk credentials. Rate limit not exercised in this run (would require 15+ hits)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_google_auth_error.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 executed, 1 skipped)",
+    "frontend": "80% — component + initial-state + docs verified; failure-mode trigger does not wire up in practice"
+  },
+  "test_credentials": "Fresh users registered per run via POST /api/auth/register (TEST_it15_* prefix). Admin per /app/memory/test_credentials.md: karanchauhan0005@gmail.com (Google-only).",
+  "seed_data_creation": "One TEST_it15_<uuid>@example.com user created per test run — not cleaned up (no delete endpoint used).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Do NOT attempt real Google Sign-In from the preview URL — origin not whitelisted in Google Console (user's fix, out of code scope). Banner trigger via @react-oauth/google onError is currently broken for the target failure mode. If main agent switches to a console-sniff trigger, verify banner appears within ~3s of GSI init on the preview URL. All data-testids on the banner: google-auth-error-help, google-auth-error-origin, google-auth-error-copy-btn, google-auth-error-console-link.",
+  "rca of the issue": "GSI (Google Identity Services) library logs '[GSI_LOGGER]: The given origin is not allowed for the given client ID' to the console when the current window.location.origin is not in the OAuth Client's Authorized JavaScript origins list. However, @react-oauth/google's <GoogleLogin> wrapper only invokes its onError prop for a narrow set of failures (button render failure, script load failure). A silent origin rejection at click-time does NOT bubble up as an error the wrapper can catch, so setGsiFailed(true) is never called and the banner never appears. Reproduction: open /login on https://finance-hardening.preview.emergentagent.com, click the 'Sign in with Google' button — nothing visible happens, console shows the [GSI_LOGGER] line, banner absent. Mitigation: main agent should replace the onError-only trigger with a console.error sniffer or render the banner as an always-visible info tooltip when GOOGLE_CLIENT_ID is set but origin isn't a known-good production one."
+}

@@ -9,6 +9,8 @@ import { CURRENCIES } from "@/lib/api";
 import { Wallet } from "lucide-react";
 import PasswordStrengthMeter, { checkPasswordStrength } from "@/components/PasswordStrengthMeter";
 import { GoogleLogin } from "@react-oauth/google";
+import { toast } from "sonner";
+import GoogleAuthErrorHelp from "@/components/auth/GoogleAuthErrorHelp";
 import useSEO from "@/hooks/useSEO";
 
 export default function Register() {
@@ -25,6 +27,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [currency, setCurrency] = useState("INR");
   const [loading, setLoading] = useState(false);
+  const [gsiFailed, setGsiFailed] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -120,9 +123,13 @@ export default function Register() {
                   window.location.href = "/dashboard";
                 }
               }}
-              onError={() => console.log("Google login failed")}
+              onError={() => {
+                setGsiFailed(true);
+                toast.error("Google sign-in blocked — origin not whitelisted");
+              }}
             />
           </div>
+          {gsiFailed && <GoogleAuthErrorHelp />}
 
           <p className="text-sm text-[#57534E] mt-6 text-center">
             Already registered? <Link to="/login" data-testid="register-to-login-link"
