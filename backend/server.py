@@ -12,6 +12,7 @@ import logging
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta
+import urllib.parse
 from dateutil import parser as dateutil_parser
 from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form, Query
@@ -5052,6 +5053,127 @@ def _build_overdue_html(user_name: str, overdue: list, currency: str = "INR") ->
     )
 
 
+# ----- WhatsApp Reminder for overdue customers -----
+def _party_reminder_message(party_name: str, outstanding: float, cur_sym: str = "Rs.") -> str:
+    """Build the pre-filled reminder text — user forwards this via WhatsApp."""
+    return (
+        f"Namaste {party_name},\n\n"
+        f"Aapke account par {cur_sym}{outstanding:,.2f} outstanding hai.\n"
+        f"Jald payment karke oblige kariye. Dhanyavaad!\n\n"
+        f"— Sent via Apka Munim"
+    )
+
+
+def _wa_link(phone: str, text: str) -> str:
+    # wa.me expects country-code prefixed digits, no + or spaces
+    clean = re.sub(r"\D", "", phone or "")
+    if clean and len(clean) == 10:
+        clean = "91" + clean  # default IN
+    return f"https://wa.me/{clean}?text={urllib.parse.quote(text)}"
+
+
+class ReminderSettingsIn(BaseModel):
+    reminders_enabled: bool = False
+    reminder_interval_days: int = 7
+
+
+@api.patch("/billing/settings/reminders")
+async def update_reminder_settings(body: ReminderSettingsIn, user=Depends(get_current_user)):
+    days = max(1, min(90, int(body.reminder_interval_days or 7)))
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "reminders_enabled": bool(body.reminders_enabled),
+            "reminder_interval_days": days,
+        }},
+    )
+    return {"reminders_enabled": bool(body.reminders_enabled), "reminder_interval_days": days}
+
+
+@api.get("/billing/settings/reminders")
+async def get_reminder_settings(user=Depends(get_current_user)):
+    return {
+        "reminders_enabled": bool(user.get("reminders_enabled", False)),
+        "reminder_interval_days": int(user.get("reminder_interval_days", 7)),
+    }
+
+
+@api.post("/billing/parties/{party_id}/send-reminder")
+@limiter.limit("30/minute")
+async def send_party_reminder(request: Request, party_id: str, user=Depends(get_current_user)):
+    """
+    Records a reminder-sent stamp and returns a pre-built click-to-WhatsApp URL
+    the client opens in a new tab. This is the manual "one-tap" reminder path.
+    """
+    owner = user["current_ledger_id"]
+    party = await db.parties.find_one({"id": party_id, "owner_id": owner})
+    if not party:
+        raise HTTPException(status_code=404, detail="Party not found")
+    outstanding = float(party.get("outstanding") or 0)
+    if outstanding <= 0:
+        raise HTTPException(status_code=400, detail="No outstanding on this party")
+    currency = user.get("currency", "INR")
+    cur_sym = {"INR": "Rs.", "USD": "$", "EUR": "EUR ", "GBP": "GBP ", "AED": "AED "}.get(currency, "")
+    msg = _party_reminder_message(party.get("name", ""), outstanding, cur_sym)
+    wa = _wa_link(party.get("phone", ""), msg)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.parties.update_one(
+        {"id": party_id, "owner_id": owner},
+        {"$set": {"last_reminder_at": now}},
+    )
+    return {
+        "party_id": party_id,
+        "party_name": party.get("name"),
+        "outstanding": outstanding,
+        "whatsapp_url": wa,
+        "message": msg,
+        "last_reminder_at": now,
+    }
+
+
+def _build_reminder_html(user_name: str, rows: list, currency: str = "INR") -> str:
+    """Weekly reminder email — lists overdue customers with a WA-share link per row."""
+    cur_sym = {"INR": "Rs.", "USD": "$", "EUR": "EUR ", "GBP": "GBP ", "AED": "AED "}.get(currency, "")
+    if not rows:
+        body = "<p style='font-size:14px;color:#3B6446'>Great news — no overdue customers this week.</p>"
+    else:
+        lis = []
+        for r in rows:
+            lis.append(
+                "<tr>"
+                f"<td style='padding:8px;border-bottom:1px solid #E7E5DF'><b>{r['name']}</b>"
+                f"<div style='font-size:11px;color:#78716C'>{r.get('phone','') or ''}</div></td>"
+                f"<td style='padding:8px;border-bottom:1px solid #E7E5DF;text-align:right;color:#B15039;font-weight:700'>"
+                f"{cur_sym}{r['outstanding']:,.2f}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #E7E5DF;text-align:center'>"
+                f"<a href='{r['wa_url']}' style='background:#25D366;color:#fff;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:12px;font-weight:700'>WhatsApp</a>"
+                "</td></tr>"
+            )
+        total = sum(r["outstanding"] for r in rows)
+        body = (
+            f"<p style='font-size:14px;color:#57534E'>Hi {user_name}, ye customers ka outstanding aapka intezaar kar raha hai:</p>"
+            f"<p style='font-size:20px;color:#B15039;font-weight:800;margin:8px 0'>{cur_sym}{total:,.2f} across {len(rows)} customer(s)</p>"
+            "<table style='width:100%;border-collapse:collapse;margin-top:12px;font-family:Arial,sans-serif;font-size:13px'>"
+            "<thead><tr style='background:#F2F0EA'><th style='padding:8px;text-align:left'>Customer</th>"
+            "<th style='padding:8px;text-align:right'>Outstanding</th>"
+            "<th style='padding:8px;text-align:center;width:110px'>Remind</th></tr></thead>"
+            f"<tbody>{''.join(lis)}</tbody></table>"
+            "<p style='font-size:12px;color:#57534E;margin-top:14px'>Tap the green button next to any row to open WhatsApp with a pre-written reminder. Statement PDF Apka Munim ke Party Profile se download kar sakte hain.</p>"
+        )
+    return (
+        "<div style='max-width:640px;margin:auto;font-family:Arial,sans-serif;color:#1C1917'>"
+        "<div style='background:#2A4F4F;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0'>"
+        "<div style='font-size:12px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.8'>Auto WhatsApp Reminders</div>"
+        "<div style='font-size:22px;font-weight:800;margin-top:4px'>Overdue Customers</div>"
+        "</div>"
+        "<div style='padding:20px;background:#fff;border:1px solid #E7E5DF;border-top:0;border-radius:0 0 8px 8px'>"
+        f"{body}"
+        "<p style='font-size:11px;color:#78716C;margin-top:24px;border-top:1px solid #E7E5DF;padding-top:12px'>"
+        "Powered by Apka Munim · Turn reminders off anytime from Billing Settings.</p>"
+        "</div></div>"
+    )
+
+
 @api.post("/billing/overdue-digest/send")
 async def send_overdue_digest(user=Depends(get_current_user)):
     """Send an overdue-invoice digest email to the current user via configured email provider."""
@@ -5709,6 +5831,85 @@ async def _startup():
             _weekly_overdue_digest_job,
             CronTrigger(day_of_week="mon", hour=8, minute=0),
             id="weekly_overdue_digest",
+            replace_existing=True,
+        )
+
+        async def _weekly_whatsapp_reminder_job():
+            """
+            Weekly job — for every user with reminders_enabled, build a list of
+            customers with outstanding > 0 whose last reminder is older than
+            their configured interval (default 7 days) and email the owner an
+            HTML digest with click-to-WhatsApp buttons per customer.
+            """
+            has_resend = bool(os.environ.get("RESEND_API_KEY", "").strip() and os.environ.get("SENDER_EMAIL", "").strip())
+            has_emergent = EMERGENT_EMAIL_KEY and not EMERGENT_EMAIL_KEY.startswith("dev-placeholder") and EMERGENT_EMAIL_KEY != "disabled"
+            if not has_resend and not has_emergent:
+                logger.info("Reminder job skipped — no email provider configured")
+                return
+            try:
+                users = await db.users.find(
+                    {"reminders_enabled": True}, {"_id": 0}
+                ).to_list(2000)
+                now = datetime.now(timezone.utc)
+                sent = 0
+                for u in users:
+                    owner = u.get("current_ledger_id") or u.get("personal_ledger_id")
+                    if not owner or not u.get("email"):
+                        continue
+                    interval = int(u.get("reminder_interval_days") or 7)
+                    cutoff = now - timedelta(days=interval)
+                    parties = await db.parties.find(
+                        {"owner_id": owner, "kind": "customer", "outstanding": {"$gt": 0}},
+                        {"_id": 0},
+                    ).to_list(500)
+                    rows = []
+                    currency = u.get("currency", "INR")
+                    cur_sym = {"INR": "Rs.", "USD": "$", "EUR": "EUR ", "GBP": "GBP ", "AED": "AED "}.get(currency, "")
+                    for p in parties:
+                        last = p.get("last_reminder_at")
+                        if last:
+                            try:
+                                last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                                if last_dt > cutoff:
+                                    continue  # reminded too recently
+                            except Exception:
+                                pass
+                        outstanding = float(p.get("outstanding") or 0)
+                        msg = _party_reminder_message(p.get("name", ""), outstanding, cur_sym)
+                        rows.append({
+                            "id": p["id"],
+                            "name": p.get("name") or "Customer",
+                            "phone": p.get("phone") or "",
+                            "outstanding": outstanding,
+                            "wa_url": _wa_link(p.get("phone", ""), msg),
+                        })
+                    if not rows:
+                        continue
+                    html = _build_reminder_html(u.get("name", "there"), rows, currency)
+                    try:
+                        await _send_email(
+                            to_email=u["email"],
+                            subject=f"Weekly WhatsApp reminders · {len(rows)} customer(s)",
+                            html=html,
+                        )
+                        # stamp last_reminder_at on each so the next run waits `interval` days
+                        stamp = now.isoformat()
+                        for r in rows:
+                            await db.parties.update_one(
+                                {"id": r["id"], "owner_id": owner},
+                                {"$set": {"last_reminder_at": stamp}},
+                            )
+                        sent += 1
+                    except Exception as e:
+                        logger.warning(f"Reminder send to {u['email']} failed: {e}")
+                logger.info(f"Weekly WhatsApp reminder complete: {sent} owners notified")
+            except Exception as e:
+                logger.error(f"Weekly reminder job crashed: {e}")
+
+        scheduler.add_job(
+            _weekly_whatsapp_reminder_job,
+            CronTrigger(day_of_week="mon", hour=9, minute=0),
+            id="weekly_whatsapp_reminder",
             replace_existing=True,
         )
         scheduler.start()

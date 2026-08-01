@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 14 — Convert AlertDialog + WhatsApp reminders. Backend: 14/14 pytest pass (test_iteration14_reminders.py): default reminder settings {enabled:false, days:7}, PATCH persists {true,5} and clamps to 1..90 (500->90, -3->1), POST /billing/parties/{id}/send-reminder returns 200 with party_id/party_name/outstanding/whatsapp_url(https://wa.me/)/message/last_reminder_at + stamps party.last_reminder_at (verified via re-GET /parties/{id}); 400 for zero outstanding; 404 for missing party; convert quotation->tax flow returns new invoice with converted_from_id; APScheduler startup log present; SECURITY_KEY_ROTATION.md exists (4798 bytes). Regression: /billing/invoices, /billing/customers, /billing/parties/{id}, /statement, /statement.pdf (application/pdf %PDF-), /gstin/lookup all 200. Frontend Playwright (fresh registered user + credit tax invoice + quotation): T1 PartyProfile Send Reminder btn visible only when isCustomer && totals.outstanding>0 — clicking fires POST /send-reminder (200), returns wa.me URL and window.open() called with correct URL; T2 zero-outstanding party -> btn HIDDEN (count==0, not just disabled); T3a Convert dialog opens via data-testid convert-inv-{id} showing 'Convert to Tax Invoice' title (Radix AlertDialog); T3b Cancel closes without POST; T3c Confirm fires POST /convert (200) and navigates to /billing/invoices/{new_id}/edit; T3d NO browser window.confirm dialogs fired during entire flow.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_reminders.py",
+    "/app/test_reports/pytest/iteration14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:5082 clamp uses `int(body.reminder_interval_days or 7)` — if user PATCHes reminder_interval_days=0 they get 7 (fallback) instead of 1 (clamp). Minor: 0 is invalid input; negative values still clamp to 1 correctly. Consider `int(body.reminder_interval_days) if body.reminder_interval_days is not None else 7` before max()/min() for consistent clamping semantics.",
+    "server.py:5917 startup log message says 'Mon 08:00 IST' but the CronTrigger is actually `hour=9` (Mon 09:00 IST). Cosmetic mismatch — spec/log should say 09:00.",
+    "server.py:5787 code comment 'Mondays 08:00 Asia/Kolkata' contradicts the actual CronTrigger hour=9. Update comment to 09:00.",
+    "PartyProfile.jsx:83 sendReminder has a client-side guard on totals.outstanding but the button is already conditionally rendered — redundant (harmless, defensive).",
+    "server.py is now 5926 lines — well over the recommended 700 LOC threshold. Recommend splitting into modules (routers/billing, routers/reminders, services/email, services/scheduler).",
+    "PartyProfile.jsx has two WhatsApp buttons ('Send Reminder' amber + 'WhatsApp' green share) side-by-side — potentially confusing UX; consider combining or renaming for clarity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_reminders.py (new)",
+    "/app/test_reports/pytest/iteration14.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14 pytest)", "frontend": "100% (T1+T2+T3a-d passed)"},
+  "test_credentials": "Fresh per run: erp_it14_<ts>@test.com / Testpass123! via /api/auth/register",
+  "seed_data_creation": "Per-run via authed API: 3 customers (TEST_UI_A with credit tax invoice ₹1500 outstanding, TEST_UI_ZeroB zero outstanding, TEST_UI_C with quotation). All user-scoped, no cleanup needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Note for creating unpaid tax invoices for outstanding UI: MUST pass payment_mode:'credit' and paid_amount:0 in POST /billing/invoices — default payment_mode is 'cash' which auto-fills paid_amount=total making balance_due=0. Party.outstanding DB field (opening_balance-seeded) differs from UI totals.outstanding (billed-paid from statement); the reminder button uses statement totals, not the DB field. Weekly WhatsApp scheduler is registered at Mon 09:00 Asia/Kolkata (log line says 08:00 IST but trigger is hour=9 — cosmetic mismatch, please fix log/comment). SECURITY_KEY_ROTATION.md is at /app/SECURITY_KEY_ROTATION.md (4.8KB).",
+  "rca of the issue": "N/A — all features working as specified."
+}

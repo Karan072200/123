@@ -6,6 +6,10 @@ import { MoneyValue } from "@/context/PrivacyContext";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { FileText, Plus, Trash2, Eye, Printer, Edit3, MessageCircle, AlertCircle, ArrowRightCircle } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import DateFilter, { computeRange } from "@/components/DateFilter";
 
 function loadCompany() {
@@ -92,14 +96,20 @@ export default function Invoices() {
   };
 
   const convertibleTypes = new Set(["quotation", "proforma", "challan", "sales-order"]);
-  const convertToInvoice = async (inv) => {
-    if (!window.confirm(`${inv.invoice_number} ko Tax Invoice me convert karna hai?`)) return;
+  const [convertTarget, setConvertTarget] = useState(null);
+  const [converting, setConverting] = useState(false);
+  const doConvert = async () => {
+    if (!convertTarget) return;
+    setConverting(true);
     try {
-      const { data } = await http.post(`/billing/invoices/${inv.id}/convert`, { target_type: "tax" });
+      const { data } = await http.post(`/billing/invoices/${convertTarget.id}/convert`, { target_type: "tax" });
       toast.success(`Converted to ${data.invoice_number}`);
+      setConvertTarget(null);
       nav(`/billing/invoices/${data.id}/edit`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Convert failed");
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -195,7 +205,7 @@ export default function Invoices() {
                       <button onClick={() => view(inv.id)} data-testid={`view-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="View"><Eye className="w-3.5 h-3.5" /></button>
                       <button onClick={() => nav(`/billing/invoices/${inv.id}/edit`)} data-testid={`edit-inv-${inv.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
                       {convertibleTypes.has(inv.invoice_type) && !inv.converted_to_id ? (
-                        <button onClick={() => convertToInvoice(inv)} data-testid={`convert-inv-${inv.id}`} className="p-1.5 hover:bg-emerald-50 rounded text-emerald-700" title="Convert to Tax Invoice"><ArrowRightCircle className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setConvertTarget(inv)} data-testid={`convert-inv-${inv.id}`} className="p-1.5 hover:bg-emerald-50 rounded text-emerald-700" title="Convert to Tax Invoice"><ArrowRightCircle className="w-3.5 h-3.5" /></button>
                       ) : null}
                       {inv.converted_to_id ? (
                         <span data-testid={`converted-badge-${inv.id}`} className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Already converted to ${inv.converted_to_number || ""}`}>Converted</span>
@@ -211,6 +221,41 @@ export default function Invoices() {
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={!!convertTarget}
+        onOpenChange={(v) => { if (!v) setConvertTarget(null); }}
+      >
+        <AlertDialogContent data-testid="convert-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <ArrowRightCircle className="w-5 h-5 text-emerald-600" />
+              Convert to Tax Invoice?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {convertTarget ? (
+                <>
+                  <span className="font-mono font-semibold text-[#1C1917]">{convertTarget.invoice_number}</span>{" "}
+                  ({convertTarget.invoice_type}) ko ek naye <b>Tax Invoice</b> me convert kiya jayega.
+                  Source document intact rahega. Stock deduct hoga aur receivable
+                  update ho jayega. Yeh action reversible nahi hai.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="convert-dialog-cancel">Rehne do</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doConvert}
+              disabled={converting}
+              data-testid="convert-dialog-confirm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {converting ? "Converting…" : "Haan, convert karo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

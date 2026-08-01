@@ -12,6 +12,7 @@ import {
   Download,
   MessageCircle,
   ArrowRight,
+  BellRing,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +74,28 @@ export default function PartyProfile() {
       toast.success("Statement downloaded");
     } catch (e) {
       toast.error("Statement download failed");
+    }
+  };
+
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const sendReminder = async () => {
+    if (!party) return;
+    if (!(totals.outstanding > 0)) {
+      toast.error("Iss party ka koi outstanding nahi hai");
+      return;
+    }
+    setReminderLoading(true);
+    try {
+      const { data: rem } = await http.post(`/billing/parties/${id}/send-reminder`);
+      window.open(rem.whatsapp_url, "_blank", "noopener,noreferrer");
+      toast.success("Reminder ready — WhatsApp open ho gaya");
+      // refresh statement so last_reminder_at reflects
+      const { data: fresh } = await http.get(`/billing/parties/${id}/statement`);
+      setData(fresh);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Reminder failed");
+    } finally {
+      setReminderLoading(false);
     }
   };
 
@@ -152,6 +175,18 @@ export default function PartyProfile() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isCustomer && totals.outstanding > 0 ? (
+            <button
+              onClick={sendReminder}
+              disabled={reminderLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-xs font-semibold shadow-sm disabled:opacity-60"
+              data-testid="party-profile-reminder-btn"
+              title="Send WhatsApp reminder"
+            >
+              <BellRing className="w-3.5 h-3.5" />
+              <span>{reminderLoading ? "Opening…" : "Send Reminder"}</span>
+            </button>
+          ) : null}
           <button
             onClick={shareOnWhatsApp}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#20b358] text-white rounded-md text-xs font-semibold shadow-sm"
