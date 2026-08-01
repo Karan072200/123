@@ -5079,7 +5079,8 @@ class ReminderSettingsIn(BaseModel):
 
 @api.patch("/billing/settings/reminders")
 async def update_reminder_settings(body: ReminderSettingsIn, user=Depends(get_current_user)):
-    days = max(1, min(90, int(body.reminder_interval_days or 7)))
+    raw = body.reminder_interval_days if body.reminder_interval_days is not None else 7
+    days = max(1, min(90, int(raw)))
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {
@@ -5785,6 +5786,8 @@ async def _startup():
         logger.warning(f"Index creation warning: {e}")
 
     # Weekly overdue-digest scheduler — Mondays 08:00 Asia/Kolkata
+    #  · Overdue digest        — Mon 08:00 IST
+    #  · WhatsApp reminders    — Mon 09:00 IST
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
@@ -5914,7 +5917,7 @@ async def _startup():
         )
         scheduler.start()
         app.state.scheduler = scheduler
-        logger.info("APScheduler started — weekly overdue digest scheduled Mon 08:00 IST")
+        logger.info("APScheduler started — overdue digest Mon 08:00 IST, WhatsApp reminders Mon 09:00 IST")
     except Exception as e:
         logger.warning(f"Scheduler init failed: {e}")
     logger.info("Apka Munim API started")

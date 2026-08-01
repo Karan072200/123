@@ -16,39 +16,37 @@ Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + Mongo
 - Voice / SMS / LLM insights (Anthropic → Groq → Emergent)
 - Public account-deletion request (unauthenticated form)
 - Slowapi rate-limiting on auth + sensitive endpoints
+- Weekly APScheduler: overdue email digest Mon 08:00 IST + WhatsApp reminders Mon 09:00 IST
 
 ## Stabilization pass (Feb 2026)
-Backend cleanup, duplicate endpoints removal, rate limiting, FY-aware invoice numbering, UPI QR on PDF, E-invoice IRN fields, WhatsApp share, Bank CSV import, APScheduler for recurring invoices + overdue email digest, multi-language support.
+Backend cleanup, duplicate endpoints removal, rate limiting, FY-aware invoice numbering, UPI QR on PDF, E-invoice IRN fields, WhatsApp share, Bank CSV import, recurring invoices, multi-language support.
 
 ## ERP Billing Workspace — Phase 1
-- New `BillingSidebar.jsx` (vertical, 8 sections, mobile drawer, "Back to Personal").
-- Rewritten `BillingLayout.jsx` — standalone shell, no longer nested inside personal Layout.
-- Rewritten `BillingHeader.jsx` — Create dropdown, FY switcher.
-- 4 new pages: Sales Returns, Customer Ledger, Supplier Ledger, Inventory Adjustments.
-- **Iteration 11**: 100% pass.
+Standalone sidebar + header, 4 new pages (Sales Returns, Customer Ledger, Supplier Ledger, Inventory Adjustments). **Iteration 11: 100% pass.**
 
-## ERP Billing Workspace — Phase 2 (5 features)
-- **Convert Documents**: `POST /api/billing/invoices/{id}/convert` (Quotation/SO/Challan/Proforma → Tax Invoice) with `converted_from_*` / `converted_to_*` audit + Invoices.jsx row button + Converted badge.
-- **Party Profile**: `/billing/parties/:id` with KPIs, invoices list, WhatsApp share, Statement PDF download.
-- **Purchase Bills**: dedicated first-class page `/billing/purchase-bills`.
-- **Statement PDF**: `/api/billing/parties/{id}/statement.pdf` via ReportLab.
-- **GSTIN Autofill**: `/api/gstin/lookup/{gstin}` structural parse (state, PAN, entity type), reusable `GstinInput` wired into Parties add/edit dialog.
-- **Iteration 12**: 100% pass (13/13 backend + 7/7 frontend).
+## ERP Billing Workspace — Phase 2
+Convert Documents endpoint + UI, PartyProfile, Purchase Bills first-class page, Statement PDF, GSTIN structural autofill. **Iteration 12: 100% pass.**
 
-## ERP Billing Workspace — Phase 3 (gap fixes)
-User asked "kuch kami hai kya" — comprehensive sweep:
-1. **Parties.jsx cards clickable** → navigate to `/billing/parties/:id` (edit/delete propagation stopped).
-2. **Sidebar routes no longer exit workspace** — removed `/customers`, `/suppliers`, `/reports-ai`; consolidated Parties section to a single `/billing/parties` link.
-3. **InvoiceCreate INVOICE_TYPES** now includes `Purchase Bill` + `Sales Order` (9 types total).
-4. **CustomerLedger / SupplierLedger row Statement PDF button** with shared `downloadPartyStatement` helper in `/lib/partyStatement.js`.
-5. **Parties.jsx openEdit** coalesces null Mongo values → no more "value prop should not be null" React warnings.
-- **Iteration 13**: 100% pass (7/7 backend + 7/7 frontend).
+## ERP Billing Workspace — Phase 3 (gap sweep)
+Clickable Parties cards, sidebar routes no longer exit workspace, `Purchase Bill` + `Sales Order` types in InvoiceCreate dropdown, Statement PDF button on ledger rows, `partyStatement.js` shared util. **Iteration 13: 100% pass.**
+
+## ERP Billing Workspace — Phase 4 (current, iteration 14: 100% pass)
+1. **Convert AlertDialog**: `window.confirm` swapped for a shadcn `<AlertDialog>` (`convert-dialog` + `convert-dialog-cancel` + `convert-dialog-confirm` testids). Nice modal with title, Hinglish description, disabled state during POST, then navigates to the newly-created tax invoice for editing.
+2. **Auto WhatsApp Reminders**:
+   - `PATCH /api/billing/settings/reminders` + `GET /api/billing/settings/reminders` — per-user toggle + interval (1-90 days, default 7).
+   - `POST /api/billing/parties/{id}/send-reminder` — 30/min rate-limited; returns pre-built `wa.me/{phone}?text=...` URL + records `last_reminder_at`; 400 if no outstanding, 404 if unknown party.
+   - Weekly scheduler `_weekly_whatsapp_reminder_job` (Mon 09:00 IST). For each user with `reminders_enabled`, finds customers with outstanding > 0 whose last reminder is older than the configured interval, emails owner a click-to-WhatsApp digest and stamps `last_reminder_at` on each party so the next run waits `interval` days.
+   - PartyProfile "Send Reminder" button (BellRing, data-testid `party-profile-reminder-btn`) — visible ONLY when `isCustomer && totals.outstanding > 0`; clicking POSTs to the endpoint and opens WhatsApp Web in a new tab.
+3. **Security — Key Rotation Guide**: `/app/SECURITY_KEY_ROTATION.md` (4.8 KB, Hinglish) with step-by-step for JWT → Google OAuth secret → Groq → Resend → MongoDB Atlas.
+
+Post-testing cosmetic fixes: scheduler startup log now correctly reports both cron times; interval clamp semantics fixed for `0` input.
 
 ## Backlog / Next
-- P1: **GST Name Lookup** — wire a paid GST API (Appyflow / ClearTax / IRIS / Masters India) so `/api/gstin/lookup` also returns `legal_name` + `address`. **Awaiting user choice of provider + API key.**
-- P1: Convert dialog — replace `window.confirm` with shadcn `<AlertDialog>` for a11y.
-- P1: Purchase Bills — server-side `?type=purchase` filter (currently client-side; caps at 500 invoices).
-- P2: Reminder auto-send (WhatsApp statement + payment link every 7 days for overdue customers).
+- P1: **GST Name Lookup** — wire a paid GST API (Appyflow / ClearTax / IRIS / Masters India) so `/api/gstin/lookup` also returns legal name + address. Awaiting user's choice of provider + API key.
+- P1: Reminder Settings UI toggle in `/billing/settings` — endpoint is ready, needs a switch + interval slider.
+- P1: PartyProfile "Send Reminder" vs "WhatsApp" button — rename to clarify intent (reminder = overdue chase text; share = generic account summary).
+- P2: Purchase Bills server-side `?type=purchase` filter (currently client-side, caps at 500 invoices).
+- P2: server.py has grown past 5900 LOC — split into `routers/billing`, `services/email`, `services/scheduler` for maintainability.
 - P2: Google Play Data Safety declaration audit.
 - P2: Automated MongoDB Atlas backups.
-- P2: Rotate all leaked keys (Mongo, Resend, Groq, JWT, Google) — pending user action.
+- P2: **User to rotate leaked keys** using SECURITY_KEY_ROTATION.md.
