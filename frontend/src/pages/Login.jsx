@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { ShieldCheck, Eye, EyeOff, Lock, Mail, KeyRound, FileText, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import GoogleAuthErrorHelp from '../components/auth/GoogleAuthErrorHelp';
-import useGsiOriginErrorDetector from '../hooks/useGsiOriginErrorDetector';
+import { isKnownGoodGoogleOrigin } from '../lib/googleOrigins';
 
 export default function Login() {
   const { login, loginWithPin, googleLogin } = useAuth();
@@ -17,8 +17,10 @@ export default function Login() {
   const [pin, setPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [gsiFailed, setGsiFailed] = useState(false);
-  useGsiOriginErrorDetector(useCallback(() => setGsiFailed(true), []));
+  // Proactively surface the setup banner on any host that we know is NOT in
+  // the OAuth client's Authorized origins list. Users can dismiss it — the
+  // choice persists per origin via localStorage inside GoogleAuthErrorHelp.
+  const showGsiHelp = !isKnownGoodGoogleOrigin();
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
@@ -260,10 +262,7 @@ export default function Login() {
             <div className="flex justify-center" data-testid="login-google-wrapper">
               <GoogleLogin
                 onSuccess={handleGoogleSuccess}
-                onError={() => {
-                  setGsiFailed(true);
-                  toast.error('Google sign-in blocked — origin not whitelisted');
-                }}
+                onError={() => toast.error('Google sign-in blocked — check the amber note below')}
                 useOneTap={false}
                 theme="outline"
                 size="large"
@@ -271,7 +270,7 @@ export default function Login() {
                 shape="rectangular"
               />
             </div>
-            {gsiFailed && <GoogleAuthErrorHelp />}
+            {showGsiHelp && <GoogleAuthErrorHelp />}
           </div>
 
           <p className="mt-8 text-center text-xs text-slate-500">

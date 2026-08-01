@@ -1,20 +1,28 @@
 import React, { useState } from "react";
-import { AlertTriangle, Copy, ExternalLink } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 
 /**
- * Inline diagnostic banner shown when Google Sign-In fails.
- * The @react-oauth/google GoogleLogin button silently fails when the current
- * browser origin is not whitelisted in Google Cloud Console. GSI logs
- * "The given origin is not allowed for the given client ID" to the console,
- * but nothing user-visible appears — a confusing dead-end.
+ * Inline diagnostic banner shown when the current browser origin is very
+ * likely NOT whitelisted in Google Cloud Console's Authorized JavaScript
+ * origins list. See /app/GOOGLE_OAUTH_FIX.md for the full fix.
  *
- * This banner surfaces the exact origin the user must add + a copy button + a
- * direct link to Google Cloud Console credentials page.
+ * Rendered proactively on any host outside KNOWN_GOOD_GOOGLE_HOSTS. Users
+ * can dismiss it — dismissal is persisted per origin in localStorage.
  */
 export default function GoogleAuthErrorHelp() {
-  const [copied, setCopied] = useState(false);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const dismissKey = `gsi-help-dismissed:${origin}`;
+  const [copied, setCopied] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return typeof window !== "undefined" && localStorage.getItem(dismissKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  if (dismissed) return null;
 
   const copy = async () => {
     try {
@@ -27,6 +35,15 @@ export default function GoogleAuthErrorHelp() {
     }
   };
 
+  const dismiss = () => {
+    try {
+      localStorage.setItem(dismissKey, "1");
+    } catch {
+      /* ignore quota errors */
+    }
+    setDismissed(true);
+  };
+
   return (
     <div
       data-testid="google-auth-error-help"
@@ -35,10 +52,20 @@ export default function GoogleAuthErrorHelp() {
       <div className="flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="font-bold">Google Sign-In blocked</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-bold">Google Sign-In may be blocked here</div>
+            <button
+              onClick={dismiss}
+              data-testid="google-auth-error-dismiss-btn"
+              aria-label="Dismiss"
+              className="p-0.5 rounded hover:bg-amber-200/60 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 -mr-1 -mt-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <div className="mt-0.5 leading-relaxed">
-            Iss URL par abhi Google login allow nahi hai. Google Cloud Console me{" "}
-            <b>Authorized JavaScript origins</b> me ye origin add karo — 2 min ka kaam:
+            Iss URL par Google login tab hi chalega jab ye origin{" "}
+            <b>Authorized JavaScript origins</b> me added ho. 2 min ka kaam:
           </div>
           <div className="mt-2 flex items-center gap-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded p-2 font-mono">
             <span className="truncate flex-1" data-testid="google-auth-error-origin">

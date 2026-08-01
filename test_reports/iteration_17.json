@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 17 re-test of the host-allowlist approach for GoogleAuthErrorHelp banner. All acceptance criteria pass end-to-end: banner renders proactively on /login and /register on the preview host (not in KNOWN_GOOD_GOOGLE_HOSTS), origin element shows the current window.location.origin, console link points to https://console.cloud.google.com/apis/credentials with target=_blank, copy button writes origin to clipboard, dismiss button hides the banner and persists per-origin under localStorage 'gsi-help-dismissed:<origin>', dismissal survives full page reload, clearing that key restores the banner, and setting the flag for a different origin (https://apkamunim.com) does NOT hide the current-origin banner (per-origin isolation confirmed). Backend regression: POST /api/auth/google -> 401 on invalid credential, POST /api/auth/register and /api/auth/login both return 200. /app/GOOGLE_OAUTH_FIX.md exists (3537 bytes, >2KB). /app/memory/test_credentials.md unchanged.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_google_auth_regression.py",
+    "/app/test_reports/pytest/iteration17.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GoogleAuthErrorHelp uses window.location.origin as the storage-key suffix; matches the intended per-origin isolation contract.",
+    "isKnownGoodGoogleOrigin() checks hostname (not full origin) so http vs https on same host would still be considered whitelisted — acceptable but worth noting if staging on http is ever added.",
+    "Kept-but-unused file /app/frontend/src/hooks/useGsiOriginErrorDetector.js is dead code; consider deleting or documenting its future-use intent to avoid confusion."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_google_auth_regression.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (14/14 assertions)"},
+  "test_credentials": "Fresh TEST_iter17_* users registered per run via POST /api/auth/register",
+  "seed_data_creation": "One TEST_iter17_<uuid>@example.com user per pytest run — no cleanup endpoint invoked (safe, TEST_ prefix).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Banner logic is now host-allowlist based; no console.error sniffing. KNOWN_GOOD_GOOGLE_HOSTS in /app/frontend/src/lib/googleOrigins.js currently contains only apkamunim.com and www.apkamunim.com. Any other host (preview, localhost:*, staging) will show the amber banner immediately on /login and /register. localStorage key format: 'gsi-help-dismissed:<origin>'. Full Google sign-in flow remains out of scope (origin not whitelisted in Google Console — user action).",
+  "notes": "The 'Origin copied' Sonner toast could not be visually captured by Playwright locator (likely dismissed before wait_for resolved), but navigator.clipboard.readText() returned the correct origin value, confirming the copy handler works. Not a bug."
+}
