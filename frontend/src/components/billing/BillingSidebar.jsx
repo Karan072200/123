@@ -68,8 +68,8 @@ const sections = [
     icon: Users,
     children: [
       { label: "All Parties", to: "/billing/parties" },
-      { label: "Customers", to: "/customers" },
-      { label: "Suppliers", to: "/suppliers" },
+      { label: "Customer Ledger", to: "/billing/customer-ledger" },
+      { label: "Supplier Ledger", to: "/billing/supplier-ledger" },
     ],
   },
   {
@@ -113,7 +113,6 @@ const sections = [
       { label: "Profit & Loss", to: "/billing/reports?type=pnl" },
       { label: "Day Book", to: "/billing/reports?type=daybook" },
       { label: "Stock Report", to: "/billing/reports?type=stock" },
-      { label: "AI Reports", to: "/reports-ai" },
     ],
   },
   {

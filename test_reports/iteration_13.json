@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 13 gap-fix validation: all 4 fixes verified end-to-end. Backend light regression (7/7 pytest pass): /api/billing/customers GET+POST, /suppliers GET, /invoices GET, /parties/{id}, /parties/{id}/statement, /parties/{id}/statement.pdf (200, application/pdf, %PDF-), /gstin/lookup/{gstin}. Frontend Playwright (7/7 flows pass with fresh registered user + seeded customer & supplier): (1) Parties card is clickable — clicking party-{id} card navigates to /billing/parties/{id} and PartyProfile renders (data-testid='party-profile-page' visible); (2) Edit icon (party-edit-{id}) opens the Edit dialog with party-name input visible and does NOT navigate; (3) Delete icon (party-delete-{id}) triggers window.confirm which was dismissed — no navigation; (4) BillingSidebar contains ZERO /customers, /suppliers, /reports-ai links; Parties section has 3 in-workspace children (All Parties, Customer Ledger, Supplier Ledger) with correct data-testids, and clicking Customer Ledger routes to /billing/customer-ledger with sidebar still visible; (5) CustomerLedger row has customer-ledger-statement-{id} button that triggers a PDF download (statement-TEST_UI_Cust.pdf) without navigating; (6) SupplierLedger same behavior (statement-TEST_UI_Supp.pdf); (7) InvoiceCreate /billing/invoices/new?type=purchase preselects invoice_type='purchase' (label 'Purchase Bill'), /?type=sales-order preselects 'sales-order' (label 'Sales Order'); dropdown lists exactly 9 options: tax, gst, purchase, proforma, quotation, sales-order, challan, credit, debit.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_regression.py",
+    "/app/test_reports/pytest/iteration13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Parties.jsx: openEdit spreads full party object into form (setForm({...emptyForm, ...p})) which includes id/outstanding/created_at/etc — harmless because the PATCH endpoint likely ignores extras, but a whitelist pick would be cleaner and avoid the React 'value prop should not be null' console warning observed on the opening_balance Input when p.opening_balance is null.",
+    "BillingSidebar.jsx: 'Customer Ledger' and 'Supplier Ledger' now appear as children under BOTH 'Parties' AND 'Ledgers' sections (duplication). Consider consolidating to one location, or if intentional as a convenience shortcut, note it in UX docs. Currently both work identically.",
+    "CustomerLedger/SupplierLedger downloadPartyStatement helpers are duplicated line-for-line (except the toast text). Extract into a shared util in /lib to keep DRY.",
+    "Parties.jsx: delete confirm still uses window.confirm — not accessible; consider AlertDialog to match app-wide pattern (repeated from iter12 code review, still not addressed)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_regression.py (new)",
+    "/app/test_reports/pytest/iteration13.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "100% (7/7 playwright flows)"},
+  "test_credentials": "Fresh per run: erp_it13_<ts>@test.com / Testpass123! via /api/auth/register",
+  "seed_data_creation": "Per-run via authed API: 1 customer (TEST_UI_Cust) + 1 supplier (TEST_UI_Supp). No cleanup needed — user-scoped data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 4 gap-fixes confirmed working. Minor pre-existing console warning observed: 'value prop on input should not be null' when opening Edit dialog for a party whose opening_balance came back as null from the API — harmless but easy to fix by defaulting nullable numeric fields in openEdit. Customer/Supplier Ledger children are duplicated across Parties and Ledgers sections in the sidebar (both sections list them) — confirm this is intentional. Statement PDF filename convention is statement-<partyName>.pdf.",
+  "rca of the issue": "N/A — no issues found."
+}

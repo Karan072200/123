@@ -2,8 +2,23 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { http, formatMoney } from "@/lib/api";
 import { usePrivacy } from "../../context/PrivacyContext";
-import { Users, Search, ArrowRight, TrendingUp } from "lucide-react";
+import { Users, Search, ArrowRight, Download } from "lucide-react";
 import { toast } from "sonner";
+
+async function downloadPartyStatement(partyId, name) {
+  try {
+    const res = await http.get(`/billing/parties/${partyId}/statement.pdf`, { responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `statement-${(name || "party").replace(/\s+/g, "_")}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success("Statement downloaded");
+  } catch (e) {
+    toast.error("Statement download failed");
+  }
+}
 
 /**
  * Customer Ledger — shows every customer with their outstanding balance,
@@ -174,7 +189,7 @@ export default function CustomerLedger() {
                   <th className="text-right px-4 py-2 font-semibold">
                     Outstanding
                   </th>
-                  <th className="px-4 py-2"></th>
+                  <th className="px-4 py-2 w-20"></th>
                 </tr>
               </thead>
               <tbody>
@@ -205,8 +220,16 @@ export default function CustomerLedger() {
                     <td className="px-4 py-2 text-right tabular-nums font-semibold text-amber-700 dark:text-amber-400">
                       {money(r.outstanding)}
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <ArrowRight className="w-3.5 h-3.5 inline text-slate-400" />
+                    <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => downloadPartyStatement(r.id, r.name)}
+                        title="Download Statement PDF"
+                        data-testid={`customer-ledger-statement-${r.id}`}
+                        className="p-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded text-emerald-700 dark:text-emerald-400"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <ArrowRight className="w-3.5 h-3.5 inline text-slate-400 ml-1" />
                     </td>
                   </tr>
                 ))}

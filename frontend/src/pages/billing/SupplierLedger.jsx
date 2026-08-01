@@ -2,8 +2,23 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { http, formatMoney } from "@/lib/api";
 import { usePrivacy } from "../../context/PrivacyContext";
-import { Users, Search, ArrowRight } from "lucide-react";
+import { Users, Search, ArrowRight, Download } from "lucide-react";
 import { toast } from "sonner";
+
+async function downloadPartyStatement(partyId, name) {
+  try {
+    const res = await http.get(`/billing/parties/${partyId}/statement.pdf`, { responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `statement-${(name || "party").replace(/\s+/g, "_")}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success("Statement downloaded");
+  } catch (e) {
+    toast.error("Statement download failed");
+  }
+}
 
 /**
  * Supplier Ledger — shows every supplier with payable balance and total
@@ -163,7 +178,7 @@ export default function SupplierLedger() {
                     Total Purchase
                   </th>
                   <th className="text-right px-4 py-2 font-semibold">Payable</th>
-                  <th className="px-4 py-2"></th>
+                  <th className="px-4 py-2 w-20"></th>
                 </tr>
               </thead>
               <tbody>
@@ -194,8 +209,16 @@ export default function SupplierLedger() {
                     <td className="px-4 py-2 text-right tabular-nums font-semibold text-sky-700 dark:text-sky-400">
                       {money(r.payable)}
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <ArrowRight className="w-3.5 h-3.5 inline text-slate-400" />
+                    <td className="px-4 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => downloadPartyStatement(r.id, r.name)}
+                        title="Download Statement PDF"
+                        data-testid={`supplier-ledger-statement-${r.id}`}
+                        className="p-1.5 hover:bg-sky-100 dark:hover:bg-sky-900/40 rounded text-sky-700 dark:text-sky-400"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <ArrowRight className="w-3.5 h-3.5 inline text-slate-400 ml-1" />
                     </td>
                   </tr>
                 ))}

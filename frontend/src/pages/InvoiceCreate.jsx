@@ -13,10 +13,12 @@ import { QRCodeSVG } from "qrcode.react";
 const INVOICE_TYPES = [
   { key: "tax", label: "Tax Invoice" },
   { key: "gst", label: "GST Invoice" },
+  { key: "purchase", label: "Purchase Bill" },
   { key: "proforma", label: "Proforma" },
   { key: "quotation", label: "Quotation" },
+  { key: "sales-order", label: "Sales Order" },
   { key: "challan", label: "Delivery Challan" },
-  { key: "credit", label: "Credit Note" },
+  { key: "credit", label: "Credit Note / Sales Return" },
   { key: "debit", label: "Debit Note" },
 ];
 

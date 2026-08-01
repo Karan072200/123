@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { http, formatMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ const emptyForm = { name: "", phone: "", email: "", gstin: "", address: "", open
 export default function Parties({ kind = "customer" }) {
   const isCustomer = kind === "customer";
   const { user } = useAuth();
+  const navigate = useNavigate();
   const cur = user?.currency || "INR";
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
@@ -98,7 +100,8 @@ export default function Parties({ kind = "customer" }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {items.map((p) => (
             <div key={p.id} data-testid={`party-${p.id}`}
-              className="bg-white border border-[#E7E5DF] rounded-xl p-4">
+              onClick={() => navigate(`/billing/parties/${p.id}`)}
+              className="bg-white border border-[#E7E5DF] rounded-xl p-4 cursor-pointer hover:border-[#2A4F4F] hover:shadow-sm transition-all">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="font-heading text-lg font-semibold">{p.name}</div>
@@ -108,9 +111,9 @@ export default function Parties({ kind = "customer" }) {
                   </div>
                   {p.gstin && <div className="text-xs text-[#78716C] mt-0.5">GSTIN: {p.gstin}</div>}
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => openEdit(p)} className="p-1.5 hover:bg-[#F2F0EA] rounded"><Edit3 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => remove(p.id)} className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]"><Trash2 className="w-3.5 h-3.5" /></button>
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => openEdit(p)} data-testid={`party-edit-${p.id}`} className="p-1.5 hover:bg-[#F2F0EA] rounded"><Edit3 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => remove(p.id)} data-testid={`party-delete-${p.id}`} className="p-1.5 hover:bg-[#D96C52]/10 rounded text-[#B15039]"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between border-t border-[#E7E5DF] pt-3">
