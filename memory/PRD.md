@@ -17,50 +17,38 @@ Apka Munim is a Hinglish personal-finance + billing app (React + FastAPI + Mongo
 - Public account-deletion request (unauthenticated form)
 - Slowapi rate-limiting on auth + sensitive endpoints
 
-## What was implemented in the cleanup / stabilization pass (Feb 2026)
-- Removed broken duplicate `DELETE /api/user/delete-account`, rewrote `POST /api/public/delete-account-request` with EmailStr + rate limit.
-- Graceful env checks (`JWT_SECRET`, `GOOGLE_CLIENT_ID`).
-- Added `WarrantyUpdateIn`, `PATCH /warranties/{id}`, `PATCH /kids/{kid_id}`, `PATCH /accounts/{account_id}`.
-- FY-aware invoice numbering, PDF polish, UPI QR, E-invoice IRN fields, WhatsApp share.
-- Payment reconciliation UI + Bank CSV import.
-- Recurring auto-run via APScheduler + Overdue Email Digest.
-- Multi-language support (Hindi / Hinglish / English) via LanguageContext.
+## Stabilization pass (Feb 2026)
+Backend cleanup, duplicate endpoints removal, rate limiting, FY-aware invoice numbering, UPI QR on PDF, E-invoice IRN fields, WhatsApp share, Bank CSV import, APScheduler for recurring invoices + overdue email digest, multi-language support.
 
-## ERP Billing Workspace refactor — Phase 1 (Feb 2026)
-- New `BillingSidebar.jsx` (vertical, 8 sections, collapsible, mobile drawer, "Back to Personal").
+## ERP Billing Workspace — Phase 1
+- New `BillingSidebar.jsx` (vertical, 8 sections, mobile drawer, "Back to Personal").
 - Rewritten `BillingLayout.jsx` — standalone shell, no longer nested inside personal Layout.
-- Rewritten `BillingHeader.jsx` — Create dropdown (Sales / Purchase / Money), FY switcher.
-- Removed dead code: `BillingSubNav.jsx`, duplicate `BillingDashboardWorkspace.jsx`.
-- Fixed CustomerLedger/SupplierLedger to use `/billing/customers` + `/billing/suppliers`.
+- Rewritten `BillingHeader.jsx` — Create dropdown, FY switcher.
 - 4 new pages: Sales Returns, Customer Ledger, Supplier Ledger, Inventory Adjustments.
-- Iteration 11 report: 100% pass (backend regression + frontend flows).
+- **Iteration 11**: 100% pass.
 
-## ERP Billing Workspace — Phase 2 (Feb 2026, current)
+## ERP Billing Workspace — Phase 2 (5 features)
+- **Convert Documents**: `POST /api/billing/invoices/{id}/convert` (Quotation/SO/Challan/Proforma → Tax Invoice) with `converted_from_*` / `converted_to_*` audit + Invoices.jsx row button + Converted badge.
+- **Party Profile**: `/billing/parties/:id` with KPIs, invoices list, WhatsApp share, Statement PDF download.
+- **Purchase Bills**: dedicated first-class page `/billing/purchase-bills`.
+- **Statement PDF**: `/api/billing/parties/{id}/statement.pdf` via ReportLab.
+- **GSTIN Autofill**: `/api/gstin/lookup/{gstin}` structural parse (state, PAN, entity type), reusable `GstinInput` wired into Parties add/edit dialog.
+- **Iteration 12**: 100% pass (13/13 backend + 7/7 frontend).
 
-### Backend (`server.py`)
-- `POST /api/billing/invoices/{id}/convert` — one-tap conversion Quotation/SO/Challan/Proforma → Tax Invoice with `converted_from_*` / `converted_to_*` audit fields.
-- `GET /api/billing/parties/{id}` — single-party fetch.
-- `GET /api/billing/parties/{id}/statement` — party ledger JSON.
-- `GET /api/billing/parties/{id}/statement.pdf` — WhatsApp-shareable ledger PDF (ReportLab).
-- `GET /api/gstin/lookup/{gstin}` — 15-char structural parse → state, PAN, entity type. Rate-limited 30/min.
-
-### Frontend
-- Convert button + Converted badge on Invoices.jsx rows (quotation/SO/challan/proforma).
-- New `PartyProfile.jsx` at `/billing/parties/:id` — KPIs, invoices list, WhatsApp share, Statement PDF download.
-- New `PurchaseBills.jsx` at `/billing/purchase-bills` — first-class module with search + KPIs. BillingSidebar Purchase group now points here.
-- New `GstinInput.jsx` reusable component — wired into Parties.jsx add-customer dialog with auto-fill on blur.
-- CustomerLedger / SupplierLedger rows navigate to `/billing/parties/:id`.
-- Static Tailwind class map for PartyProfile accent color (JIT-safe).
-
-### Iteration 12 test results (both) — 100% pass
-- Backend 13/13 pytest cases (GSTIN valid/invalid/unauth, Convert quotation→tax + source flag flip, Party profile+statement totals, statement.pdf `%PDF-` header, Purchase invoice CRUD, full regression).
-- Frontend 7/7 flows (purchase-bills page, party-profile page, convert flow, converted-badge, GSTIN autofill, personal-layout intact on /dashboard, statement PDF direct fetch).
+## ERP Billing Workspace — Phase 3 (gap fixes)
+User asked "kuch kami hai kya" — comprehensive sweep:
+1. **Parties.jsx cards clickable** → navigate to `/billing/parties/:id` (edit/delete propagation stopped).
+2. **Sidebar routes no longer exit workspace** — removed `/customers`, `/suppliers`, `/reports-ai`; consolidated Parties section to a single `/billing/parties` link.
+3. **InvoiceCreate INVOICE_TYPES** now includes `Purchase Bill` + `Sales Order` (9 types total).
+4. **CustomerLedger / SupplierLedger row Statement PDF button** with shared `downloadPartyStatement` helper in `/lib/partyStatement.js`.
+5. **Parties.jsx openEdit** coalesces null Mongo values → no more "value prop should not be null" React warnings.
+- **Iteration 13**: 100% pass (7/7 backend + 7/7 frontend).
 
 ## Backlog / Next
-- P1: Purchase Bills — server-side `?type=purchase` filter (currently client-side; caps at 500 invoices).
+- P1: **GST Name Lookup** — wire a paid GST API (Appyflow / ClearTax / IRIS / Masters India) so `/api/gstin/lookup` also returns `legal_name` + `address`. **Awaiting user choice of provider + API key.**
 - P1: Convert dialog — replace `window.confirm` with shadcn `<AlertDialog>` for a11y.
-- P1: GSTIN legal-name enrichment via a paid GST API (ClearTax / GSTN) — the endpoint contract is ready to accept it.
-- P2: InvoiceCreate `type=purchase` UI flow end-to-end verification.
+- P1: Purchase Bills — server-side `?type=purchase` filter (currently client-side; caps at 500 invoices).
+- P2: Reminder auto-send (WhatsApp statement + payment link every 7 days for overdue customers).
 - P2: Google Play Data Safety declaration audit.
 - P2: Automated MongoDB Atlas backups.
 - P2: Rotate all leaked keys (Mongo, Resend, Groq, JWT, Google) — pending user action.

@@ -4,21 +4,7 @@ import { http, formatMoney } from "@/lib/api";
 import { usePrivacy } from "../../context/PrivacyContext";
 import { Users, Search, ArrowRight, Download } from "lucide-react";
 import { toast } from "sonner";
-
-async function downloadPartyStatement(partyId, name) {
-  try {
-    const res = await http.get(`/billing/parties/${partyId}/statement.pdf`, { responseType: "blob" });
-    const url = window.URL.createObjectURL(new Blob([res.data]));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `statement-${(name || "party").replace(/\s+/g, "_")}.pdf`;
-    document.body.appendChild(a); a.click(); a.remove();
-    window.URL.revokeObjectURL(url);
-    toast.success("Statement downloaded");
-  } catch (e) {
-    toast.error("Statement download failed");
-  }
-}
+import { downloadPartyStatement } from "@/lib/partyStatement";
 
 /**
  * Customer Ledger — shows every customer with their outstanding balance,

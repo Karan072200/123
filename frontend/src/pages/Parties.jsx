@@ -56,7 +56,23 @@ export default function Parties({ kind = "customer" }) {
     load();
   };
 
-  const openEdit = (p) => { setEditing(p.id); setForm({ ...emptyForm, ...p }); setOpen(true); };
+  const openEdit = (p) => {
+    // Coalesce any null-from-Mongo values to their empty defaults so React
+    // controlled inputs don't warn "value prop should not be null".
+    const safe = {
+      ...emptyForm,
+      ...p,
+      name: p.name || "",
+      phone: p.phone || "",
+      email: p.email || "",
+      gstin: p.gstin || "",
+      address: p.address || "",
+      opening_balance: p.opening_balance ?? 0,
+    };
+    setEditing(p.id);
+    setForm(safe);
+    setOpen(true);
+  };
   const openAdd = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
 
   const totalOutstanding = items.reduce((s, p) => s + Number(p.outstanding || 0), 0);

@@ -66,11 +66,7 @@ const sections = [
     key: "parties",
     label: "Parties",
     icon: Users,
-    children: [
-      { label: "All Parties", to: "/billing/parties" },
-      { label: "Customer Ledger", to: "/billing/customer-ledger" },
-      { label: "Supplier Ledger", to: "/billing/supplier-ledger" },
-    ],
+    to: "/billing/parties",
   },
   {
     key: "inventory",
