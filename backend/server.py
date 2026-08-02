@@ -2728,8 +2728,8 @@ async def ai_chat(body: ChatIn, user=Depends(get_current_user)):
 # ----- Financial Goals (Sapno ka Wallet) -----
 class GoalIn(BaseModel):
     name: str
-    target_amount: float
-    saved_amount: float = 0.0
+    target_amount: float = Field(gt=0)
+    saved_amount: float = Field(default=0.0, ge=0)
     target_date: Optional[str] = None
     emoji: str = "🎯"
     color: str = "#4A7C59"
@@ -5287,7 +5287,7 @@ async def _auto_run_recurring_if_due(user: dict):
 
 # ----- Public UPI/Payment Webhook (PhonePe / PayU / Cashfree / generic) -----
 class UpiWebhookPayload(BaseModel):
-    amount: float
+    amount: float = Field(gt=0)
     reference: Optional[str] = None
     payer_name: Optional[str] = None
     payer_upi: Optional[str] = None
@@ -5311,8 +5311,9 @@ async def upi_payment_webhook(business_id: str, request: Request):
     """
     Public endpoint for payment providers to notify us of incoming UPI/bank
     payments. Body: {amount, reference, payer_name, payer_upi, payment_mode, notes}.
-    Optional HMAC signature via `X-Signature-256: sha256=<hex>` header, verified
-    against the user's `webhook_secret` (set via /billing/webhook/rotate).
+    Requires HMAC signature via `X-Signature-256: sha256=<hex>` header, verified
+    against the user's `webhook_secret` (set via /billing/webhook/rotate). Requests
+    are rejected if no secret has been configured yet.
     """
     # Locate the target user (ledger owner). business_id == user.id.
     user_doc = await db.users.find_one({"id": business_id}, {"_id": 0})
@@ -5322,8 +5323,15 @@ async def upi_payment_webhook(business_id: str, request: Request):
     raw = await request.body()
     sent_sig = request.headers.get("x-signature-256", "")
     secret = user_doc.get("webhook_secret")
-    # If a secret is set, signature MUST match. If no secret, allow (dev mode).
-    if secret and not _verify_webhook_signature(secret, raw, sent_sig):
+    # A webhook secret MUST be configured before this endpoint accepts anything —
+    # otherwise anyone who learns the business_id could POST a fake payment and
+    # have it auto-matched against an open invoice, marking it as paid for free.
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail="Webhook not configured. Set up your webhook secret first via /billing/webhook/rotate.",
+        )
+    if not _verify_webhook_signature(secret, raw, sent_sig):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -5538,7 +5546,12 @@ async def provider_payment_webhook(business_id: str, provider: str, request: Req
     raw = await request.body()
     sent_sig = request.headers.get("x-signature-256", "")
     secret = user_doc.get("webhook_secret")
-    if secret and not _verify_webhook_signature(secret, raw, sent_sig):
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail="Webhook not configured. Set up your webhook secret first via /billing/webhook/rotate.",
+        )
+    if not _verify_webhook_signature(secret, raw, sent_sig):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -5756,10 +5769,7 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=(
-        [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
-        or ["*"]  # Safe fallback so a missing CORS_ORIGINS on Railway doesn't silently block every request
-    ),
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
