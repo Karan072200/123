@@ -112,6 +112,26 @@ const sections = [
     ],
   },
   {
+    key: "accounting",
+    label: "Accounting",
+    icon: BookOpen,
+    children: [
+      { label: "Trial Balance", to: "/billing/accounting-reports?r=trial-balance" },
+      { label: "Profit & Loss", to: "/billing/accounting-reports?r=pnl" },
+      { label: "Balance Sheet", to: "/billing/accounting-reports?r=balance-sheet" },
+      { label: "Day Book", to: "/billing/accounting-reports?r=day-book" },
+      { label: "Cash Book", to: "/billing/accounting-reports?r=cash-book" },
+      { label: "GSTR-1", to: "/billing/accounting-reports?r=gstr-1" },
+      { label: "GSTR-3B", to: "/billing/accounting-reports?r=gstr-3b" },
+    ],
+  },
+  {
+    key: "manufacturing",
+    label: "Manufacturing",
+    icon: BarChart3,
+    to: "/billing/manufacturing",
+  },
+  {
     key: "settings",
     label: "Settings",
     icon: SettingsIcon,

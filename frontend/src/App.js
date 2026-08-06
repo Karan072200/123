@@ -56,6 +56,10 @@ const InventoryAdjustments = lazy(() => import('./pages/billing/InventoryAdjustm
 const PartyProfile = lazy(() => import('./pages/billing/PartyProfile'));
 const PurchaseBills = lazy(() => import('./pages/billing/PurchaseBills'));
 
+// Phase 8 (Manufacturing) + Phase 5 (Accounting Reports) — added in Foundation-Fix session
+const Manufacturing = lazy(() => import('./pages/Manufacturing'));
+const AccountingReports = lazy(() => import('./pages/AccountingReports'));
+
 function RouteFallback() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
@@ -162,6 +166,14 @@ export default function App() {
               <Route path="/billing/payments" element={<ProtectedBillingRoute><Udhaar /></ProtectedBillingRoute>} />
               <Route path="/billing/reports" element={<ProtectedBillingRoute><BillingReports /></ProtectedBillingRoute>} />
               <Route path="/billing/settings" element={<ProtectedBillingRoute><Settings tab="billing" /></ProtectedBillingRoute>} />
+
+              {/* Phase 8 — Manufacturing / Garment ERP workspace */}
+              <Route path="/manufacturing" element={<ProtectedMainRoute><Manufacturing /></ProtectedMainRoute>} />
+              <Route path="/billing/manufacturing" element={<ProtectedBillingRoute><Manufacturing /></ProtectedBillingRoute>} />
+
+              {/* Phase 5 — Accounting Reports (Trial Balance / P&L / Balance Sheet / GST) */}
+              <Route path="/accounting-reports" element={<ProtectedMainRoute><AccountingReports /></ProtectedMainRoute>} />
+              <Route path="/billing/accounting-reports" element={<ProtectedBillingRoute><AccountingReports /></ProtectedBillingRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

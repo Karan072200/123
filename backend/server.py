@@ -5786,13 +5786,44 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# GZip compression for all API responses > 500 bytes.
+# Saves 60-80% bandwidth on JSON payloads (analytics endpoints go from ~200KB → ~40KB).
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+
+# CORS — with a SAFE fallback list. Previously, if CORS_ORIGINS env was unset,
+# allow_origins became [] and every browser call was blocked (deploy footgun).
+_default_cors = [
+    "https://apkamunim.com",
+    "https://www.apkamunim.com",
+    "http://localhost:3000",
+    "http://localhost:8001",
+]
+_cors_env = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()],
+    allow_origins=_cors_env or _default_cors,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ----- Mount modular routers (Phase 2 — Foundation Fix) -----
+# New feature modules live in backend/routers/*.py to keep this file from growing.
+# Each router mounts under /api via APIRouter with its own sub-prefix.
+try:
+    from routers.manufacturing import router as manufacturing_router  # noqa: E402
+    app.include_router(manufacturing_router)
+    logger.info("Manufacturing router mounted at /api/manufacturing")
+except Exception as e:
+    logging.warning(f"Manufacturing router not loaded: {e}")
+
+try:
+    from routers.accounting_reports import router as accounting_reports_router  # noqa: E402
+    app.include_router(accounting_reports_router)
+    logger.info("Accounting-reports router mounted at /api/reports")
+except Exception as e:
+    logging.warning(f"Accounting-reports router not loaded: {e}")
 
 
 @app.on_event("startup")
@@ -5812,6 +5843,55 @@ async def _startup():
         await db.password_reset_tokens.create_index("token", unique=True)
         await db.password_reset_tokens.create_index("expires_at")
         await db.pin_attempts.create_index("email", unique=True)
+
+        # ----- Missing indexes added in Foundation Fix (Session 2) -----
+        # Billing / ERP hot collections — previously did full-scan on every list query
+        await db.invoices.create_index([("owner_id", 1), ("date", -1)])
+        await db.invoices.create_index([("owner_id", 1), ("invoice_number", 1)])
+        await db.invoices.create_index([("owner_id", 1), ("party_id", 1)])
+        await db.invoices.create_index([("owner_id", 1), ("status", 1)])
+        await db.invoices.create_index([("owner_id", 1), ("type", 1)])
+        await db.parties.create_index([("owner_id", 1), ("name", 1)])
+        await db.parties.create_index([("owner_id", 1), ("type", 1)])
+        await db.parties.create_index([("owner_id", 1), ("gstin", 1)])
+        await db.products.create_index([("owner_id", 1), ("name", 1)])
+        await db.products.create_index([("owner_id", 1), ("barcode", 1)])
+        await db.products.create_index([("owner_id", 1), ("sku", 1)])
+        await db.bank_payments.create_index([("owner_id", 1), ("date", -1)])
+        await db.bank_payments.create_index([("owner_id", 1), ("party_id", 1)])
+        await db.bank_payments.create_index([("owner_id", 1), ("status", 1)])
+        await db.investments.create_index([("owner_id", 1), ("date", -1)])
+        await db.warranties.create_index([("owner_id", 1), ("expiry_date", 1)])
+        await db.splits.create_index([("owner_id", 1)])
+        await db.kids.create_index([("owner_id", 1)])
+        await db.kid_entries.create_index([("kid_id", 1), ("date", -1)])
+        await db.login_activity.create_index([("user_id", 1), ("at", -1)])
+        await db.deletion_requests.create_index([("email", 1), ("status", 1)])
+        await db.invoice_templates.create_index([("owner_id", 1)])
+        await db.recurring_invoices.create_index([("owner_id", 1), ("next_run_at", 1)])
+
+        # TTL indexes — auto-cleanup after expiry (Mongo housekeeping)
+        try:
+            await db.otp_codes.create_index("expires_at", expireAfterSeconds=0)
+        except Exception:
+            pass  # collection may not exist yet
+
+        # ----- Manufacturing / Garment ERP indexes (Phase 8) -----
+        await db.boms.create_index([("owner_id", 1), ("product_id", 1)])
+        await db.boms.create_index([("owner_id", 1), ("code", 1)])
+        await db.fabrics.create_index([("owner_id", 1), ("name", 1)])
+        await db.fabrics.create_index([("owner_id", 1), ("gsm", 1), ("color", 1)])
+        await db.production_orders.create_index([("owner_id", 1), ("status", 1)])
+        await db.production_orders.create_index([("owner_id", 1), ("order_no", 1)])
+        await db.production_orders.create_index([("owner_id", 1), ("created_at", -1)])
+        await db.production_stages.create_index([("production_order_id", 1), ("stage_no", 1)])
+        await db.job_work.create_index([("owner_id", 1), ("vendor_id", 1), ("status", 1)])
+        await db.wastage_entries.create_index([("owner_id", 1), ("date", -1)])
+
+        # ----- Audit log (new) -----
+        await db.audit_logs.create_index([("owner_id", 1), ("at", -1)])
+        await db.audit_logs.create_index([("user_id", 1), ("at", -1)])
+        await db.audit_logs.create_index([("entity_type", 1), ("entity_id", 1)])
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
 

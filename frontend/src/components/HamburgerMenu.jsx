@@ -141,14 +141,28 @@ export default function HamburgerMenu({ isOpen, onClose }) {
     {
       title: 'BUSINESS REPORTS',
       items: [
+        { label: 'Trial Balance', path: '/accounting-reports?r=trial-balance', icon: PieChart },
+        { label: 'Profit & Loss', path: '/accounting-reports?r=pnl', icon: PieChart },
+        { label: 'Balance Sheet', path: '/accounting-reports?r=balance-sheet', icon: BookOpen },
+        { label: 'Day Book', path: '/accounting-reports?r=day-book', icon: BookOpen },
+        { label: 'Cash Book', path: '/accounting-reports?r=cash-book', icon: BookOpen },
+        { label: 'GSTR-1', path: '/accounting-reports?r=gstr-1', icon: ShieldAlert },
+        { label: 'GSTR-3B', path: '/accounting-reports?r=gstr-3b', icon: ShieldAlert },
         { label: 'Customer Ledger', path: '/billing/reports?type=customer-ledger', icon: BookMarked },
         { label: 'Supplier Ledger', path: '/billing/reports?type=supplier-ledger', icon: BookMarked },
-        { label: 'Day Book', path: '/billing/reports?type=daybook', icon: BookOpen },
-        { label: 'Profit & Loss', path: '/billing/reports?type=pnl', icon: PieChart },
         { label: 'Stock Report', path: '/billing/reports?type=stock', icon: Boxes },
-        { label: 'GST Summary', path: '/billing/reports?type=gst', icon: ShieldAlert },
         { label: 'All Reports & AI', path: '/reports-ai', icon: BarChart3 },
         { label: 'Business Reports', path: '/reports', icon: FileText },
+      ],
+    },
+    {
+      title: 'MANUFACTURING (GARMENT ERP)',
+      items: [
+        { label: 'Manufacturing Dashboard', path: '/manufacturing', icon: BarChart3 },
+        { label: 'BOM & Costing', path: '/manufacturing', icon: FileText },
+        { label: 'Production Orders', path: '/manufacturing', icon: Boxes },
+        { label: 'Fabric Inventory', path: '/manufacturing', icon: Boxes },
+        { label: 'Job Work', path: '/manufacturing', icon: Receipt },
       ],
     },
     {

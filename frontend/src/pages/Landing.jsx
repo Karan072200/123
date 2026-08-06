@@ -1,8 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Wallet, TrendingUp, Users, Sparkles, ArrowRight } from "lucide-react";
+import { Wallet, TrendingUp, Users, Sparkles, ArrowRight, Sun, Moon } from "lucide-react";
 import useSEO from "@/hooks/useSEO";
+import { useTheme } from "@/context/ThemeContext";
 
 const Feature = ({ icon: Icon, title, desc }) => (
   <div className="bg-white border border-[#E7E5DF] rounded-lg p-6 hover:-translate-y-1 transition-transform">
@@ -15,6 +16,7 @@ const Feature = ({ icon: Icon, title, desc }) => (
 );
 
 export default function Landing() {
+  const { theme, toggle: toggleTheme } = useTheme();
   useSEO({
     title: "Apka Munim — Hinglish Expense & Udhaar Tracker App",
     description:
@@ -32,6 +34,14 @@ export default function Landing() {
           <span className="font-heading text-xl font-bold text-[#1C1917]">Apka Munim</span>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg text-[#57534E] hover:bg-[#F2F0EA] transition-colors"
+            aria-label="Toggle theme"
+            data-testid="landing-theme-toggle"
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
           <Link to="/login" data-testid="nav-login-link">
             <Button variant="ghost" className="text-[#1C1917] hover:bg-[#F2F0EA]">Login</Button>
           </Link>
