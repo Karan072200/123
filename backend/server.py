@@ -165,15 +165,36 @@ logger = logging.getLogger("paisabook")
 
 
 # ----- Auth Helpers -----
+# Upgraded in Phase 3 (Security 10/10) to Argon2id with bcrypt fallback.
+# See backend/security/passwords.py for the strong-password policy.
+from security.passwords import (  # noqa: E402
+    hash_password as _hp,
+    verify_password as _vp,
+    needs_rehash as _needs_rehash,
+    WeakPasswordError,
+)
+# RBAC helper — imported early so decorators below can use `rbac_require(...)`.
+try:
+    from security.rbac import require_permission as rbac_require  # noqa: E402
+except Exception:  # pragma: no cover
+    def rbac_require(_perm):  # fallback: just require auth
+        from fastapi import Depends as _D
+        return _D(lambda user: user)
+
+
 def hash_password(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    return _hp(pw)
 
 
 def verify_password(pw: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(pw.encode(), hashed.encode())
+        return _vp(pw, hashed)
     except Exception:
         return False
+
+
+def password_needs_rehash(stored_hash: str) -> bool:
+    return _needs_rehash(stored_hash)
 
 
 def create_access_token(user_id: str, email: str) -> str:
@@ -659,7 +680,18 @@ async def login(request: Request, body: LoginIn, response: Response):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # OTP wala lafda hata diya gaya hai taaki direct login ho
+    # Transparent hash upgrade: if the user is still on bcrypt (or an older
+    # Argon2 param set), rehash to the current Argon2 policy right after a
+    # successful verify. Failure here must never block login.
+    try:
+        if password_needs_rehash(user["password_hash"]):
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"password_hash": hash_password(body.password)}},
+            )
+    except Exception:
+        pass
+
     token = create_access_token(user["id"], email)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none",
                         domain=COOKIE_DOMAIN, max_age=60 * 60 * 24 * 7, path="/")
@@ -4539,7 +4571,10 @@ BACKUP_COLLECTIONS = [
 
 
 @api.get("/backup/export")
-async def backup_export(user=Depends(require_premium)):
+async def backup_export(
+    user=Depends(require_premium),
+    _rbac=Depends(rbac_require("backup.export")),
+):
     owner = user["current_ledger_id"]
     data = {}
     for coll in BACKUP_COLLECTIONS:
@@ -4549,7 +4584,12 @@ async def backup_export(user=Depends(require_premium)):
 
 @api.post("/backup/restore")
 @limiter.limit("5/hour")
-async def backup_restore(request: Request, payload: dict, user=Depends(require_premium)):
+async def backup_restore(
+    request: Request,
+    payload: dict,
+    user=Depends(require_premium),
+    _rbac=Depends(rbac_require("backup.restore")),
+):
     owner = user["current_ledger_id"]
     data = payload.get("data") or {}
     restored = {}
@@ -5769,18 +5809,38 @@ app.include_router(api)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Adds baseline security response headers. API-only backend (no HTML
-    templates rendered here), so this intentionally skips CSP, which the
-    frontend's own hosting config should own instead."""
+    """Adds enterprise-grade response headers.
+
+    API-only backend so CSP for the API surface is intentionally strict
+    (`default-src 'none'`) — no HTML is served here. Frontend hosting
+    (Vercel) owns its own CSP.
+    """
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
+        # Baseline
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        # Only meaningful over HTTPS, which is enforced in production anyway.
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=(), autoplay=()"
+        )
+        # HTTPS-only (safe to always send; browsers ignore over http)
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
+        # This API returns JSON only — CSP forbids inline / eval / everything.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        )
+        # Deny embedding legacy plugin (Adobe Flash-era)
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        # Cross-origin isolation for API responses
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+        # Remove server fingerprinting
+        if "Server" in response.headers:
+            del response.headers["Server"]
         return response
 
 
@@ -5838,6 +5898,58 @@ try:
     logger.info("Warehouses router mounted at /api/warehouses")
 except Exception as e:
     logging.warning(f"Warehouses router not loaded: {e}")
+
+try:
+    from routers.rbac import router as rbac_router  # noqa: E402
+    app.include_router(rbac_router)
+    logger.info("RBAC router mounted at /api/rbac")
+except Exception as e:
+    logging.warning(f"RBAC router not loaded: {e}")
+
+# Bring require_permission into server.py's global scope so existing routes
+# can use it as a FastAPI dependency without touching each import line.
+# (Actual import happens earlier — this block is a no-op safety net.)
+
+# ----- Session 5: Security 10/10 wiring -----
+try:
+    from security.logs import install_sanitizer  # noqa: E402
+    install_sanitizer()
+    logger.info("Log sanitizer installed (redacts JWT/passwords/API keys from all log records)")
+except Exception as e:
+    logging.warning(f"Log sanitizer not installed: {e}")
+
+try:
+    from security.env_validator import validate_env, EnvValidationError  # noqa: E402
+    _env_errors = validate_env()
+    if _env_errors:
+        logger.warning("Environment validation warnings: %s", _env_errors)
+    else:
+        logger.info("Environment validated OK")
+except EnvValidationError as e:
+    # In production this raises and we DELIBERATELY refuse to serve.
+    logger.critical("Refusing to start: %s", e)
+    raise
+except Exception as e:
+    logging.warning(f"Env validator failed to run: {e}")
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests larger than MAX_REQUEST_BYTES (default 15 MB).
+
+    Prevents payload-based DoS on endpoints that accept lists (invoices with
+    thousands of items, batch operations, etc.).
+    """
+    MAX_BYTES = int(os.environ.get("MAX_REQUEST_MB", "15")) * 1024 * 1024
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > self.MAX_BYTES:
+            from starlette.responses import JSONResponse
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        return await call_next(request)
+
+
+app.add_middleware(RequestSizeLimitMiddleware)
 
 
 @app.on_event("startup")

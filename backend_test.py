@@ -1,1031 +1,628 @@
 #!/usr/bin/env python3
 """
-Comprehensive backend test suite for Apka Munim — Foundation Fix + Manufacturing + Reports.
+Session 5 Security Hardening Test Suite for Apka Munim
 
 Tests:
-1. Auth setup (register fresh test user)
-2. Manufacturing endpoints (13 total)
-3. Accounting Reports endpoints (7 total)
-4. Cross-cutting: auth requirements, existing endpoints, GZip
+- Suite A: RBAC endpoints (9 roles + permissions)
+- Suite B: Backup routes with RBAC guards
+- Suite C: Security headers (CSP, HSTS, COOP, CORP, etc.)
+- Suite D: Request-size limit middleware
+- Suite E: Password hashing (Argon2 + bcrypt→Argon2 rehash)
+- Suite F: Regressions (existing endpoints still work)
+- Suite G: Log sanitization (JWT redaction)
 """
-import sys
-import uuid
+
 import requests
-from datetime import datetime, timedelta
+import uuid
+import json
+import base64
+import pyotp
+import bcrypt
+from datetime import datetime
+from pymongo import MongoClient
+import os
+from dotenv import load_dotenv
+
+# Load backend env
+load_dotenv("/app/backend/.env")
 
 # Base URL from frontend/.env
-BASE_URL = "https://garment-erp-upgrade.preview.emergentagent.com"
-API_URL = f"{BASE_URL}/api"
+with open("/app/frontend/.env") as f:
+    for line in f:
+        if line.startswith("REACT_APP_BACKEND_URL="):
+            BASE_URL = line.split("=", 1)[1].strip()
+            break
 
-# Test user credentials
-TEST_EMAIL = f"TEST_foundation_{uuid.uuid4().hex[:8]}@example.com"
-TEST_PASSWORD = "TestPass@123"
-TEST_BUSINESS = "Test Garments Co"
+API_BASE = f"{BASE_URL}/api"
+MONGO_URL = os.environ["MONGO_URL"]
 
-# Global session with auth
-session = requests.Session()
-session.headers.update({"Content-Type": "application/json"})
+print(f"🧪 Session 5 Security Hardening Test Suite")
+print(f"📍 Base URL: {BASE_URL}")
+print(f"📍 API Base: {API_BASE}")
+print()
 
-# Test results
-results = {
-    "passed": [],
-    "failed": [],
-    "errors": []
-}
+# MongoDB connection for direct DB operations
+mongo_client = MongoClient(MONGO_URL)
+db_name = os.environ.get("DB_NAME", "apka_munim")
+db = mongo_client[db_name]
 
+# Test state
+test_user_email = f"TEST_sec5_{uuid.uuid4().hex[:8]}@example.com"
+test_user_password = "TestPass@123"
+test_user_name = "Test User"
+test_user_currency = "INR"
+access_token = None
+cookies = {}
 
-def log_pass(test_name: str, details: str = ""):
-    print(f"✅ PASS: {test_name}")
-    if details:
-        print(f"   {details}")
-    results["passed"].append(test_name)
+passed = 0
+failed = 0
+errors = []
 
+def log_test(name, success, detail=""):
+    global passed, failed, errors
+    if success:
+        passed += 1
+        print(f"  ✅ {name}")
+    else:
+        failed += 1
+        print(f"  ❌ {name}")
+        if detail:
+            print(f"     {detail}")
+            errors.append(f"{name}: {detail}")
 
-def log_fail(test_name: str, reason: str, response=None):
-    print(f"❌ FAIL: {test_name}")
-    print(f"   Reason: {reason}")
-    if response:
-        print(f"   Status: {response.status_code}")
-        try:
-            print(f"   Body: {response.text[:500]}")
-        except Exception:
-            pass
-    results["failed"].append({"test": test_name, "reason": reason})
-
-
-def log_error(test_name: str, error: Exception):
-    print(f"💥 ERROR: {test_name}")
-    print(f"   {type(error).__name__}: {error}")
-    results["errors"].append({"test": test_name, "error": str(error)})
-
-
-def test_auth_register():
-    """1. Register a fresh test user"""
-    try:
-        resp = requests.post(
-            f"{API_URL}/auth/register",
-            json={
-                "name": TEST_BUSINESS,
-                "email": TEST_EMAIL,
-                "password": TEST_PASSWORD,
-                "currency": "INR",
-                "business_name": TEST_BUSINESS
-            },
-            timeout=10
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "token" in data:
-                # Set auth for session
-                session.headers.update({"Authorization": f"Bearer {data['token']}"})
-                # Also try to get cookie
-                if "access_token" in resp.cookies:
-                    session.cookies.update(resp.cookies)
-                log_pass("Auth: Register", f"User: {TEST_EMAIL}")
-                return True
-            else:
-                log_fail("Auth: Register", "No token in response", resp)
-                return False
-        else:
-            log_fail("Auth: Register", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Auth: Register", e)
-        return False
-
-
-def test_auth_me():
-    """Verify /auth/me works with token"""
-    try:
-        resp = session.get(f"{API_URL}/auth/me", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "email" in data and data["email"].lower() == TEST_EMAIL.lower():
-                log_pass("Auth: /auth/me", f"Authenticated as {data['email']}")
-                return True
-            else:
-                log_fail("Auth: /auth/me", f"Email mismatch: expected {TEST_EMAIL}, got {data.get('email')}", resp)
-                return False
-        else:
-            log_fail("Auth: /auth/me", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Auth: /auth/me", e)
-        return False
-
-
-def test_manufacturing_fabrics():
-    """2. Manufacturing: Fabrics CRUD"""
-    fabric_id = None
+def register_user():
+    """Register a fresh test user and save access token"""
+    global access_token, cookies, test_user_email
     
-    # POST - Create fabric
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/fabrics",
-            json={
-                "name": "Cotton 200GSM Red",
-                "fabric_type": "cotton",
-                "gsm": 200,
-                "color": "Red",
-                "unit": "meter",
-                "rate": 120,
-                "stock_qty": 50,
-                "min_stock": 10
-            },
-            timeout=10
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data["id"].startswith("fab_"):
-                fabric_id = data["id"]
-                log_pass("Manufacturing: POST /fabrics", f"Created fabric {fabric_id}")
-            else:
-                log_fail("Manufacturing: POST /fabrics", "ID missing or wrong format", resp)
-                return False
-        else:
-            log_fail("Manufacturing: POST /fabrics", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: POST /fabrics", e)
+    print("🔐 Registering fresh test user...")
+    resp = requests.post(f"{API_BASE}/auth/register", json={
+        "email": test_user_email,
+        "password": test_user_password,
+        "name": test_user_name,
+        "currency": test_user_currency
+    })
+    
+    if resp.status_code != 200:
+        print(f"❌ Registration failed: {resp.status_code} {resp.text}")
         return False
     
-    # GET - List fabrics
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/fabrics", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and "total" in data and "skip" in data and "limit" in data:
-                if len(data["items"]) > 0:
-                    log_pass("Manufacturing: GET /fabrics", f"Found {data['total']} fabrics")
-                else:
-                    log_fail("Manufacturing: GET /fabrics", "No items returned", resp)
-                    return False
-            else:
-                log_fail("Manufacturing: GET /fabrics", "Wrong response shape", resp)
-                return False
-        else:
-            log_fail("Manufacturing: GET /fabrics", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: GET /fabrics", e)
-        return False
-    
-    # GET with search
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/fabrics?search=Cotton", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and len(data["items"]) > 0:
-                log_pass("Manufacturing: GET /fabrics?search=Cotton", f"Found {len(data['items'])} results")
-            else:
-                log_fail("Manufacturing: GET /fabrics?search", "No filtered results", resp)
-        else:
-            log_fail("Manufacturing: GET /fabrics?search", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: GET /fabrics?search", e)
-    
-    # PUT - Update fabric
-    if fabric_id:
-        try:
-            resp = session.put(
-                f"{API_URL}/manufacturing/fabrics/{fabric_id}",
-                json={
-                    "name": "Cotton 200GSM Red Updated",
-                    "fabric_type": "cotton",
-                    "gsm": 200,
-                    "color": "Red",
-                    "unit": "meter",
-                    "rate": 125,
-                    "stock_qty": 45,
-                    "min_stock": 10
-                },
-                timeout=10
-            )
-            if resp.status_code == 200:
-                log_pass("Manufacturing: PUT /fabrics/{id}", "Updated fabric")
-            else:
-                log_fail("Manufacturing: PUT /fabrics/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: PUT /fabrics/{id}", e)
-        
-        # DELETE - Delete fabric
-        try:
-            resp = session.delete(f"{API_URL}/manufacturing/fabrics/{fabric_id}", timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("deleted") == True:
-                    log_pass("Manufacturing: DELETE /fabrics/{id}", "Deleted fabric")
-                    
-                    # Verify 404 on GET after delete
-                    resp2 = session.get(f"{API_URL}/manufacturing/fabrics/{fabric_id}", timeout=10)
-                    if resp2.status_code == 404:
-                        log_pass("Manufacturing: Verify fabric deleted", "GET returns 404")
-                    else:
-                        log_fail("Manufacturing: Verify fabric deleted", f"Expected 404, got {resp2.status_code}", resp2)
-                else:
-                    log_fail("Manufacturing: DELETE /fabrics/{id}", "deleted flag not true", resp)
-            else:
-                log_fail("Manufacturing: DELETE /fabrics/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: DELETE /fabrics/{id}", e)
-    
+    data = resp.json()
+    access_token = data.get("token")
+    cookies = {"access_token": access_token}
+    print(f"✅ Registered: {test_user_email}")
+    print(f"   Token: {access_token[:20]}...")
     return True
 
+def get_headers(token=None):
+    """Get auth headers with Bearer token"""
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {access_token}"}
 
-def test_manufacturing_boms():
-    """3. Manufacturing: BOM CRUD with cost computation"""
-    bom_id = None
-    
-    # First create a fabric for BOM lines
-    fabric_resp = session.post(
-        f"{API_URL}/manufacturing/fabrics",
-        json={
-            "name": "Cotton 200GSM for BOM",
-            "fabric_type": "cotton",
-            "gsm": 200,
-            "color": "White",
-            "unit": "meter",
-            "rate": 120,
-            "stock_qty": 100,
-            "min_stock": 10
-        },
-        timeout=10
-    )
-    fabric_id = fabric_resp.json().get("id") if fabric_resp.status_code == 200 else "fab_test"
-    
-    # POST - Create BOM
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/boms",
-            json={
-                "code": "BOM-T001",
-                "product_name": "Cotton T-Shirt L",
-                "size": "L",
-                "color": "Red",
-                "lines": [
-                    {
-                        "material_id": fabric_id,
-                        "material_type": "fabric",
-                        "material_name": "Cotton 200GSM",
-                        "qty": 1.5,
-                        "unit": "meter",
-                        "wastage_pct": 5,
-                        "rate": 120
-                    },
-                    {
-                        "material_id": "fab_thread",
-                        "material_type": "fabric",
-                        "material_name": "Thread",
-                        "qty": 0.05,
-                        "unit": "kg",
-                        "wastage_pct": 0,
-                        "rate": 400
-                    }
-                ],
-                "labour_cost": 40,
-                "overhead_cost": 15
-            },
-            timeout=10
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data["id"].startswith("bom_"):
-                bom_id = data["id"]
-                # Verify cost computation
-                # material_cost = (1.5 * 1.05 * 120) + (0.05 * 1.0 * 400) = 189 + 20 = 209
-                # total_cost = 209 + 40 + 15 = 264
-                expected_material = 209.0
-                expected_total = 264.0
-                actual_material = data.get("material_cost", 0)
-                actual_total = data.get("total_cost", 0)
-                
-                if abs(actual_material - expected_material) < 0.1 and abs(actual_total - expected_total) < 0.1:
-                    log_pass("Manufacturing: POST /boms", f"Created BOM {bom_id}, costs verified: material={actual_material}, total={actual_total}")
-                else:
-                    log_fail("Manufacturing: POST /boms", f"Cost mismatch: expected material={expected_material}, total={expected_total}, got material={actual_material}, total={actual_total}", resp)
-                    return False
-            else:
-                log_fail("Manufacturing: POST /boms", "ID missing or wrong format", resp)
-                return False
-        else:
-            log_fail("Manufacturing: POST /boms", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: POST /boms", e)
-        return False
-    
-    # GET - List BOMs
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/boms", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and "total" in data:
-                log_pass("Manufacturing: GET /boms", f"Found {data['total']} BOMs")
-            else:
-                log_fail("Manufacturing: GET /boms", "Wrong response shape", resp)
-        else:
-            log_fail("Manufacturing: GET /boms", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: GET /boms", e)
-    
-    # PUT - Update BOM (verify costs recomputed)
-    if bom_id:
-        try:
-            resp = session.put(
-                f"{API_URL}/manufacturing/boms/{bom_id}",
-                json={
-                    "code": "BOM-T001-UPDATED",
-                    "product_name": "Cotton T-Shirt L Updated",
-                    "size": "L",
-                    "color": "Red",
-                    "lines": [
-                        {
-                            "material_id": fabric_id,
-                            "material_type": "fabric",
-                            "material_name": "Cotton 200GSM",
-                            "qty": 2.0,
-                            "unit": "meter",
-                            "wastage_pct": 5,
-                            "rate": 120
-                        }
-                    ],
-                    "labour_cost": 50,
-                    "overhead_cost": 20
-                },
-                timeout=10
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                # New: material_cost = 2.0 * 1.05 * 120 = 252, total = 252 + 50 + 20 = 322
-                expected_total = 322.0
-                actual_total = data.get("total_cost", 0)
-                if abs(actual_total - expected_total) < 0.1:
-                    log_pass("Manufacturing: PUT /boms/{id}", f"Updated BOM, costs recomputed: {actual_total}")
-                else:
-                    log_fail("Manufacturing: PUT /boms/{id}", f"Cost recomputation failed: expected {expected_total}, got {actual_total}", resp)
-            else:
-                log_fail("Manufacturing: PUT /boms/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: PUT /boms/{id}", e)
-        
-        # DELETE
-        try:
-            resp = session.delete(f"{API_URL}/manufacturing/boms/{bom_id}", timeout=10)
-            if resp.status_code == 200:
-                log_pass("Manufacturing: DELETE /boms/{id}", "Deleted BOM")
-            else:
-                log_fail("Manufacturing: DELETE /boms/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: DELETE /boms/{id}", e)
-    
-    return True
+# ============================================================================
+# SUITE A — RBAC ENDPOINTS
+# ============================================================================
 
-
-def test_manufacturing_orders():
-    """4. Manufacturing: Production Order flow"""
-    order_id = None
+def test_suite_a():
+    print("\n" + "="*80)
+    print("SUITE A — RBAC ENDPOINTS")
+    print("="*80)
     
-    # POST - Create order
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/orders",
-            json={
-                "product_name": "Cotton T-Shirt Red",
-                "party_name": "ABC Buyer",
-                "color": "Red",
-                "size_matrix": [
-                    {"size": "S", "qty": 10},
-                    {"size": "M", "qty": 20},
-                    {"size": "L", "qty": 15}
-                ],
-                "total_qty": 45,
-                "target_date": "2026-12-31"
-            },
-            timeout=10
-        )
+    # A1. /rbac/me
+    print("\n[A1] GET /api/rbac/me")
+    resp = requests.get(f"{API_BASE}/rbac/me", headers=get_headers())
+    log_test("A1.1: Returns 200", resp.status_code == 200, f"Got {resp.status_code}")
+    
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A1.2: Has 'role' key", "role" in data, f"Keys: {list(data.keys())}")
+        log_test("A1.3: Has 'permissions' list", "permissions" in data and isinstance(data["permissions"], list), 
+                 f"permissions type: {type(data.get('permissions'))}")
+        log_test("A1.4: Has 'email' key", "email" in data, f"Keys: {list(data.keys())}")
+        log_test("A1.5: Has 'is_admin_or_above' bool", "is_admin_or_above" in data and isinstance(data["is_admin_or_above"], bool),
+                 f"is_admin_or_above: {data.get('is_admin_or_above')}")
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data["id"].startswith("po_"):
-                order_id = data["id"]
-                order_no = data.get("order_no", "")
-                
-                # Verify order_no pattern PO-YYYY-####
-                import re
-                if re.match(r"^PO-\d{4}-\d{4}$", order_no):
-                    log_pass("Manufacturing: POST /orders - order_no", f"Order number: {order_no}")
-                else:
-                    log_fail("Manufacturing: POST /orders - order_no", f"Wrong pattern: {order_no}", resp)
-                
-                # Verify status and stage
-                if data.get("status") == "pending" and data.get("current_stage_no") == 1:
-                    log_pass("Manufacturing: POST /orders - status", "Status=pending, stage=1")
-                else:
-                    log_fail("Manufacturing: POST /orders - status", f"Wrong status/stage: {data.get('status')}/{data.get('current_stage_no')}", resp)
-                
-                # Verify stages_detail
-                stages = data.get("stages_detail", [])
-                expected_stages = ["Cutting", "Stitching", "Embroidery", "Printing", "Washing", "Packing", "QC"]
-                if len(stages) == 7:
-                    stage_names = [s.get("name") for s in stages]
-                    if stage_names == expected_stages:
-                        log_pass("Manufacturing: POST /orders - stages", f"7 stages: {', '.join(stage_names)}")
-                    else:
-                        log_fail("Manufacturing: POST /orders - stages", f"Wrong stage names: {stage_names}", resp)
-                else:
-                    log_fail("Manufacturing: POST /orders - stages", f"Expected 7 stages, got {len(stages)}", resp)
-            else:
-                log_fail("Manufacturing: POST /orders", "ID missing or wrong format", resp)
-                return False
-        else:
-            log_fail("Manufacturing: POST /orders", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: POST /orders", e)
-        return False
+        # Fresh user should be admin (legacy fallback)
+        role = data.get("role")
+        log_test("A1.6: Role is 'admin' (legacy fallback)", role == "admin", f"Got role: {role}")
+        
+        is_admin = data.get("is_admin_or_above")
+        log_test("A1.7: is_admin_or_above is true", is_admin == True, f"Got: {is_admin}")
+        
+        perms = data.get("permissions", [])
+        log_test("A1.8: Has 'reports.view' permission", "reports.view" in perms, f"Permissions: {perms}")
+        log_test("A1.9: Has 'invoice.delete' permission", "invoice.delete" in perms, f"Permissions: {perms}")
     
-    # GET - List orders
+    # A2. /rbac/roles
+    print("\n[A2] GET /api/rbac/roles")
+    resp = requests.get(f"{API_BASE}/rbac/roles", headers=get_headers())
+    log_test("A2.1: Returns 200", resp.status_code == 200, f"Got {resp.status_code}")
+    
+    if resp.status_code == 200:
+        data = resp.json()
+        roles = data.get("roles", [])
+        log_test("A2.2: Has 'roles' array", isinstance(roles, list), f"Type: {type(roles)}")
+        log_test("A2.3: Has exactly 9 roles", len(roles) == 9, f"Got {len(roles)} roles")
+        
+        expected_roles = ["super_admin", "admin", "manager", "accountant", "warehouse", "factory", "sales", "staff", "viewer"]
+        role_names = [r.get("role") for r in roles]
+        log_test("A2.4: All 9 role names present", set(expected_roles) == set(role_names), 
+                 f"Expected: {expected_roles}, Got: {role_names}")
+    
+    # A3. /rbac/check-permission
+    print("\n[A3] POST /api/rbac/check-permission")
+    
+    # Test invoice.delete (admin should have)
+    resp = requests.post(f"{API_BASE}/rbac/check-permission", 
+                         headers=get_headers(),
+                         json={"permission": "invoice.delete"})
+    log_test("A3.1: Returns 200", resp.status_code == 200, f"Got {resp.status_code}")
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A3.2: invoice.delete allowed for admin", data.get("allowed") == True, f"Got: {data}")
+    
+    # Test backup.restore (only super_admin)
+    resp = requests.post(f"{API_BASE}/rbac/check-permission",
+                         headers=get_headers(),
+                         json={"permission": "backup.restore"})
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A3.3: backup.restore denied for admin", data.get("allowed") == False, f"Got: {data}")
+    
+    # Test read (all roles)
+    resp = requests.post(f"{API_BASE}/rbac/check-permission",
+                         headers=get_headers(),
+                         json={"permission": "read"})
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A3.4: read allowed for admin", data.get("allowed") == True, f"Got: {data}")
+    
+    # Test made-up permission (default deny)
+    resp = requests.post(f"{API_BASE}/rbac/check-permission",
+                         headers=get_headers(),
+                         json={"permission": "made-up-permission"})
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A3.5: made-up-permission denied (default deny)", data.get("allowed") == False, f"Got: {data}")
+    
+    # A4. /rbac/change-role
+    print("\n[A4] POST /api/rbac/change-role")
+    
+    # Change self to viewer
+    resp = requests.post(f"{API_BASE}/rbac/change-role",
+                         headers=get_headers(),
+                         json={"user_email": test_user_email, "role": "viewer"})
+    log_test("A4.1: Change role to viewer returns 200", resp.status_code == 200, f"Got {resp.status_code}: {resp.text}")
+    
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A4.2: Response has email", data.get("email") == test_user_email, f"Got: {data}")
+        log_test("A4.3: Response has role=viewer", data.get("role") == "viewer", f"Got: {data}")
+    
+    # Verify role changed
+    resp = requests.get(f"{API_BASE}/rbac/me", headers=get_headers())
+    if resp.status_code == 200:
+        data = resp.json()
+        log_test("A4.4: /rbac/me now shows role=viewer", data.get("role") == "viewer", f"Got role: {data.get('role')}")
+        log_test("A4.5: is_admin_or_above now false", data.get("is_admin_or_above") == False, 
+                 f"Got: {data.get('is_admin_or_above')}")
+    
+    # Try to change role back (should fail - viewer lacks permission)
+    resp = requests.post(f"{API_BASE}/rbac/change-role",
+                         headers=get_headers(),
+                         json={"user_email": test_user_email, "role": "admin"})
+    log_test("A4.6: Viewer cannot change role (403)", resp.status_code == 403, 
+             f"Got {resp.status_code}: {resp.text}")
+
+# ============================================================================
+# SUITE B — BACKUP ROUTES WITH RBAC GUARDS
+# ============================================================================
+
+def test_suite_b():
+    print("\n" + "="*80)
+    print("SUITE B — BACKUP ROUTES WITH RBAC GUARDS")
+    print("="*80)
+    
+    # Continue as viewer from A4
+    print("\n[B1] Backup export denied for viewer")
+    resp = requests.get(f"{API_BASE}/backup/export", headers=get_headers())
+    log_test("B1.1: GET /backup/export returns 403 for viewer", resp.status_code == 403,
+             f"Got {resp.status_code}: {resp.text}")
+    
+    if resp.status_code == 403:
+        detail = resp.json().get("detail", "")
+        log_test("B1.2: Error mentions 'backup.export'", "backup.export" in str(detail),
+                 f"Detail: {detail}")
+    
+    print("\n[B2] Backup restore denied for viewer")
+    resp = requests.post(f"{API_BASE}/backup/restore", 
+                         headers=get_headers(),
+                         json={"data": {}})
+    log_test("B2.1: POST /backup/restore returns 403 for viewer", resp.status_code == 403,
+             f"Got {resp.status_code}: {resp.text}")
+    
+    print("\n[B3] Register fresh admin user")
+    # Register another user (defaults to admin)
+    admin_email = f"TEST_sec5_admin_{uuid.uuid4().hex[:8]}@example.com"
+    admin_password = "AdminPass@123"
+    
+    resp = requests.post(f"{API_BASE}/auth/register", json={
+        "email": admin_email,
+        "password": admin_password,
+        "name": "Admin User",
+        "currency": "INR"
+    })
+    log_test("B3.1: Admin user registered", resp.status_code == 200, f"Got {resp.status_code}")
+    
+    if resp.status_code == 200:
+        admin_token = resp.json().get("token")
+        
+        # Try backup export as admin
+        resp = requests.get(f"{API_BASE}/backup/export", headers={"Authorization": f"Bearer {admin_token}"})
+        # May return 200 OR 402/403 with premium-required (not RBAC 403)
+        is_ok = resp.status_code == 200 or (resp.status_code in [402, 403] and "premium" in resp.text.lower())
+        log_test("B3.2: Admin can access /backup/export (200 or premium-required)", is_ok,
+                 f"Got {resp.status_code}: {resp.text[:100]}")
+
+# ============================================================================
+# SUITE C — SECURITY HEADERS
+# ============================================================================
+
+def test_suite_c():
+    print("\n" + "="*80)
+    print("SUITE C — SECURITY HEADERS")
+    print("="*80)
+    
+    print("\n[C1] All security headers on /api/ root")
+    resp = requests.get(f"{API_BASE}/")
+    log_test("C1.1: GET /api/ returns 200", resp.status_code == 200, f"Got {resp.status_code}")
+    
+    headers = {k.lower(): v for k, v in resp.headers.items()}
+    
+    # Content-Security-Policy
+    csp = headers.get("content-security-policy", "")
+    log_test("C1.2: Has Content-Security-Policy", bool(csp), f"CSP: {csp}")
+    log_test("C1.3: CSP contains default-src 'none'", "default-src 'none'" in csp, f"CSP: {csp}")
+    log_test("C1.4: CSP contains frame-ancestors 'none'", "frame-ancestors 'none'" in csp, f"CSP: {csp}")
+    log_test("C1.5: CSP contains base-uri 'none'", "base-uri 'none'" in csp, f"CSP: {csp}")
+    
+    # Strict-Transport-Security
+    hsts = headers.get("strict-transport-security", "")
+    log_test("C1.6: Has Strict-Transport-Security", bool(hsts), f"HSTS: {hsts}")
+    log_test("C1.7: HSTS contains max-age=63072000", "max-age=63072000" in hsts, f"HSTS: {hsts}")
+    log_test("C1.8: HSTS contains preload", "preload" in hsts, f"HSTS: {hsts}")
+    
+    # X-Frame-Options
+    xfo = headers.get("x-frame-options", "")
+    log_test("C1.9: X-Frame-Options = DENY", xfo.upper() == "DENY", f"Got: {xfo}")
+    
+    # X-Content-Type-Options
+    xcto = headers.get("x-content-type-options", "")
+    log_test("C1.10: X-Content-Type-Options = nosniff", xcto.lower() == "nosniff", f"Got: {xcto}")
+    
+    # Referrer-Policy
+    rp = headers.get("referrer-policy", "")
+    log_test("C1.11: Referrer-Policy = strict-origin-when-cross-origin", 
+             rp.lower() == "strict-origin-when-cross-origin", f"Got: {rp}")
+    
+    # Permissions-Policy
+    pp = headers.get("permissions-policy", "")
+    log_test("C1.12: Has Permissions-Policy", bool(pp), f"PP: {pp}")
+    log_test("C1.13: Permissions-Policy contains geolocation=()", "geolocation=()" in pp, f"PP: {pp}")
+    log_test("C1.14: Permissions-Policy contains payment=()", "payment=()" in pp, f"PP: {pp}")
+    
+    # X-Permitted-Cross-Domain-Policies
+    xpcdp = headers.get("x-permitted-cross-domain-policies", "")
+    log_test("C1.15: X-Permitted-Cross-Domain-Policies = none", xpcdp.lower() == "none", f"Got: {xpcdp}")
+    
+    # Cross-Origin-Opener-Policy
+    coop = headers.get("cross-origin-opener-policy", "")
+    log_test("C1.16: Cross-Origin-Opener-Policy = same-origin", coop.lower() == "same-origin", f"Got: {coop}")
+    
+    # Cross-Origin-Resource-Policy
+    corp = headers.get("cross-origin-resource-policy", "")
+    log_test("C1.17: Cross-Origin-Resource-Policy = same-site", corp.lower() == "same-site", f"Got: {corp}")
+
+# ============================================================================
+# SUITE D — REQUEST-SIZE LIMIT
+# ============================================================================
+
+def test_suite_d():
+    print("\n" + "="*80)
+    print("SUITE D — REQUEST-SIZE LIMIT")
+    print("="*80)
+    
+    print("\n[D1] 413 on huge Content-Length")
+    # Send request with huge Content-Length header
+    headers_huge = get_headers()
+    headers_huge["Content-Length"] = "20000000"  # 20 MB
+    
     try:
-        resp = session.get(f"{API_URL}/manufacturing/orders", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and "total" in data:
-                log_pass("Manufacturing: GET /orders", f"Found {data['total']} orders")
-            else:
-                log_fail("Manufacturing: GET /orders", "Wrong response shape", resp)
-        else:
-            log_fail("Manufacturing: GET /orders", f"Expected 200, got {resp.status_code}", resp)
+        resp = requests.post(f"{API_BASE}/auth/login",
+                            headers=headers_huge,
+                            json={"email": "test@example.com", "password": "test"},
+                            timeout=5)
+        log_test("D1.1: Returns 413 for huge Content-Length", resp.status_code == 413,
+                 f"Got {resp.status_code}: {resp.text}")
     except Exception as e:
-        log_error("Manufacturing: GET /orders", e)
+        log_test("D1.1: Returns 413 for huge Content-Length", False, f"Exception: {e}")
     
-    # POST /advance - Test stage progression
-    if order_id:
-        try:
-            # Advance once: pending -> in_progress, stage 1->2
-            resp = session.post(f"{API_URL}/manufacturing/orders/{order_id}/advance", timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") == "in_progress" and data.get("current_stage_no") == 2:
-                    stages = data.get("stages_detail", [])
-                    if stages[0].get("completed_at"):
-                        log_pass("Manufacturing: POST /orders/{id}/advance (1st)", "Status=in_progress, stage=2, stage 1 completed")
-                    else:
-                        log_fail("Manufacturing: POST /orders/{id}/advance (1st)", "Stage 1 not marked completed", resp)
-                else:
-                    log_fail("Manufacturing: POST /orders/{id}/advance (1st)", f"Wrong status/stage: {data.get('status')}/{data.get('current_stage_no')}", resp)
-            else:
-                log_fail("Manufacturing: POST /orders/{id}/advance (1st)", f"Expected 200, got {resp.status_code}", resp)
+    print("\n[D2] Normal request unaffected")
+    resp = requests.post(f"{API_BASE}/auth/login",
+                        json={"email": test_user_email, "password": test_user_password})
+    log_test("D2.1: Normal login request works", resp.status_code in [200, 401],
+             f"Got {resp.status_code}")
+
+# ============================================================================
+# SUITE E — PASSWORD HASHING
+# ============================================================================
+
+def test_suite_e():
+    print("\n" + "="*80)
+    print("SUITE E — PASSWORD HASHING")
+    print("="*80)
+    
+    print("\n[E1] New users get Argon2")
+    # Register a fresh user
+    e1_email = f"TEST_sec5_argon_{uuid.uuid4().hex[:8]}@example.com"
+    e1_password = "Argon2Test@123"
+    
+    resp = requests.post(f"{API_BASE}/auth/register", json={
+        "email": e1_email,
+        "password": e1_password,
+        "name": "Argon Test",
+        "currency": "INR"
+    })
+    log_test("E1.1: User registered", resp.status_code == 200, f"Got {resp.status_code}")
+    
+    if resp.status_code == 200:
+        # Check password_hash in DB
+        user_doc = db.users.find_one({"email": e1_email})
+        if user_doc:
+            pw_hash = user_doc.get("password_hash", "")
+            log_test("E1.2: password_hash starts with $argon2id$", pw_hash.startswith("$argon2id$"),
+                     f"Hash prefix: {pw_hash[:20]}")
+        else:
+            log_test("E1.2: password_hash starts with $argon2id$", False, "User not found in DB")
+    
+    print("\n[E2] Bcrypt legacy login still works (rehash test)")
+    # Create a user with bcrypt hash directly in DB
+    e2_email = f"TEST_sec5_bcrypt_{uuid.uuid4().hex[:8]}@example.com"
+    e2_password = "OldPass@123456"
+    
+    # Generate bcrypt hash
+    bcrypt_hash = bcrypt.hashpw(e2_password.encode(), bcrypt.gensalt()).decode()
+    
+    # Insert user with bcrypt hash
+    user_id = str(uuid.uuid4())
+    personal_ledger_id = f"pl_{user_id}"
+    now_iso = datetime.utcnow().isoformat()
+    
+    db.users.insert_one({
+        "id": user_id,
+        "email": e2_email,
+        "name": "Bcrypt Test",
+        "password_hash": bcrypt_hash,
+        "currency": "INR",
+        "personal_ledger_id": personal_ledger_id,
+        "current_ledger_id": personal_ledger_id,
+        "created_at": now_iso,
+        "registrationDate": now_iso,
+        "trialStart": now_iso,
+        "trialEnd": now_iso,
+        "subscriptionStatus": "trial",
+        "premiumActive": True,
+    })
+    
+    db.ledgers.insert_one({
+        "id": personal_ledger_id,
+        "name": "Personal",
+        "type": "personal",
+        "owner_user_id": user_id,
+        "members": [user_id],
+        "created_at": now_iso,
+    })
+    
+    log_test("E2.1: Bcrypt user inserted in DB", True)
+    
+    # Try to login with bcrypt password
+    resp = requests.post(f"{API_BASE}/auth/login", json={
+        "email": e2_email,
+        "password": e2_password
+    })
+    log_test("E2.2: Login succeeds with bcrypt hash", resp.status_code == 200,
+             f"Got {resp.status_code}: {resp.text}")
+    
+    if resp.status_code == 200:
+        # Check if password was rehashed to Argon2
+        user_doc = db.users.find_one({"email": e2_email})
+        if user_doc:
+            new_hash = user_doc.get("password_hash", "")
+            log_test("E2.3: password_hash now starts with $argon2id$ (rehashed)", 
+                     new_hash.startswith("$argon2id$"),
+                     f"Hash prefix: {new_hash[:20]}")
             
-            # Advance 5 more times (stages 2-6)
-            for i in range(2, 7):
-                resp = session.post(f"{API_URL}/manufacturing/orders/{order_id}/advance", timeout=10)
-                if resp.status_code != 200:
-                    log_fail(f"Manufacturing: POST /orders/{{id}}/advance ({i})", f"Expected 200, got {resp.status_code}", resp)
-                    break
-            else:
-                data = resp.json()
-                if data.get("status") == "in_progress" and data.get("current_stage_no") == 7:
-                    log_pass("Manufacturing: POST /orders/{id}/advance (2-6)", "Advanced to stage 7, status=in_progress")
-                else:
-                    log_fail("Manufacturing: POST /orders/{id}/advance (2-6)", f"Wrong status/stage: {data.get('status')}/{data.get('current_stage_no')}", resp)
-            
-            # Advance one more time: should complete
-            resp = session.post(f"{API_URL}/manufacturing/orders/{order_id}/advance", timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") == "completed" and data.get("current_stage_no") == 7:
-                    log_pass("Manufacturing: POST /orders/{id}/advance (final)", "Status=completed, stage=7")
-                else:
-                    log_fail("Manufacturing: POST /orders/{id}/advance (final)", f"Wrong status/stage: {data.get('status')}/{data.get('current_stage_no')}", resp)
-            else:
-                log_fail("Manufacturing: POST /orders/{id}/advance (final)", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: POST /orders/{id}/advance", e)
-    
-    # Create a new order for stage update test
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/orders",
-            json={
-                "product_name": "Test Order for Stage Update",
-                "party_name": "Test Buyer",
-                "color": "Blue",
-                "size_matrix": [{"size": "M", "qty": 50}],
-                "total_qty": 50,
-                "target_date": "2026-12-31"
-            },
-            timeout=10
-        )
-        if resp.status_code == 200:
-            new_order_id = resp.json().get("id")
-            
-            # POST /stages/{stage_no}/update
-            try:
-                resp = session.post(
-                    f"{API_URL}/manufacturing/orders/{new_order_id}/stages/3/update",
-                    json={
-                        "completed_qty": 30,
-                        "wastage_qty": 2,
-                        "completed": True,
-                        "started": True
-                    },
-                    timeout=10
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    stages = data.get("stages_detail", [])
-                    stage_3 = next((s for s in stages if s.get("stage_no") == 3), None)
-                    if stage_3:
-                        if stage_3.get("completed_at") and stage_3.get("started_at"):
-                            if stage_3.get("completed_qty") == 30 and stage_3.get("wastage_qty") == 2:
-                                log_pass("Manufacturing: POST /orders/{id}/stages/{n}/update", "Stage 3 updated with qty and timestamps")
-                            else:
-                                log_fail("Manufacturing: POST /orders/{id}/stages/{n}/update", f"Wrong qty: completed={stage_3.get('completed_qty')}, wastage={stage_3.get('wastage_qty')}", resp)
-                        else:
-                            log_fail("Manufacturing: POST /orders/{id}/stages/{n}/update", "Timestamps not set", resp)
-                    else:
-                        log_fail("Manufacturing: POST /orders/{id}/stages/{n}/update", "Stage 3 not found", resp)
-                else:
-                    log_fail("Manufacturing: POST /orders/{id}/stages/{n}/update", f"Expected 200, got {resp.status_code}", resp)
-            except Exception as e:
-                log_error("Manufacturing: POST /orders/{id}/stages/{n}/update", e)
+            # Try to login again with same password (verify Argon2 works)
+            resp = requests.post(f"{API_BASE}/auth/login", json={
+                "email": e2_email,
+                "password": e2_password
+            })
+            log_test("E2.4: Login still works after rehash", resp.status_code == 200,
+                     f"Got {resp.status_code}")
         else:
-            log_fail("Manufacturing: Create order for stage update", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: Create order for stage update", e)
-    
-    # GET with status filter
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/orders?status=in_progress", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data:
-                log_pass("Manufacturing: GET /orders?status=in_progress", f"Filter works, found {len(data['items'])} orders")
-            else:
-                log_fail("Manufacturing: GET /orders?status", "Wrong response shape", resp)
-        else:
-            log_fail("Manufacturing: GET /orders?status", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: GET /orders?status", e)
-    
-    # DELETE
-    if order_id:
-        try:
-            resp = session.delete(f"{API_URL}/manufacturing/orders/{order_id}", timeout=10)
-            if resp.status_code == 200:
-                log_pass("Manufacturing: DELETE /orders/{id}", "Deleted order")
-            else:
-                log_fail("Manufacturing: DELETE /orders/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: DELETE /orders/{id}", e)
-    
-    return True
+            log_test("E2.3: password_hash now starts with $argon2id$ (rehashed)", False, 
+                     "User not found in DB")
 
+# ============================================================================
+# SUITE F — REGRESSIONS
+# ============================================================================
 
-def test_manufacturing_job_work():
-    """5. Manufacturing: Job Work CRUD"""
-    jw_id = None
+def test_suite_f():
+    print("\n" + "="*80)
+    print("SUITE F — REGRESSIONS (Previously-passing endpoints)")
+    print("="*80)
     
-    # POST
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/job-work",
-            json={
-                "vendor_id": "v1",
-                "vendor_name": "XYZ Embroidery",
-                "stage_name": "Embroidery",
-                "qty_sent": 50,
-                "rate": 15,
-                "sent_date": "2026-01-01"
-            },
-            timeout=10
-        )
+    # Register a fresh user for regression tests
+    f_email = f"TEST_sec5_regress_{uuid.uuid4().hex[:8]}@example.com"
+    f_password = "StrongP@ss123"
+    
+    print("\n[F1] POST /api/auth/register")
+    resp = requests.post(f"{API_BASE}/auth/register", json={
+        "email": f_email,
+        "password": f_password,
+        "name": "Regression Test",
+        "currency": "INR"
+    })
+    log_test("F1.1: Register returns 200", resp.status_code == 200, f"Got {resp.status_code}: {resp.text}")
+    
+    if resp.status_code == 200:
+        f_token = resp.json().get("token")
+        f_headers = {"Authorization": f"Bearer {f_token}"}
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data["id"].startswith("jw_"):
-                jw_id = data["id"]
-                # Verify total_amount = 50 * 15 = 750
-                if data.get("total_amount") == 750:
-                    log_pass("Manufacturing: POST /job-work", f"Created job-work {jw_id}, total_amount=750")
-                else:
-                    log_fail("Manufacturing: POST /job-work", f"Wrong total_amount: {data.get('total_amount')}", resp)
-            else:
-                log_fail("Manufacturing: POST /job-work", "ID missing or wrong format", resp)
-                return False
-        else:
-            log_fail("Manufacturing: POST /job-work", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: POST /job-work", e)
-        return False
-    
-    # GET
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/job-work", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and "total" in data:
-                log_pass("Manufacturing: GET /job-work", f"Found {data['total']} job-work entries")
-            else:
-                log_fail("Manufacturing: GET /job-work", "Wrong response shape", resp)
-        else:
-            log_fail("Manufacturing: GET /job-work", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: GET /job-work", e)
-    
-    # PUT
-    if jw_id:
-        try:
-            resp = session.put(
-                f"{API_URL}/manufacturing/job-work/{jw_id}",
-                json={
-                    "vendor_id": "v1",
-                    "vendor_name": "XYZ Embroidery Updated",
-                    "stage_name": "Embroidery",
-                    "qty_sent": 60,
-                    "rate": 15,
-                    "sent_date": "2026-01-01"
-                },
-                timeout=10
-            )
-            if resp.status_code == 200:
-                log_pass("Manufacturing: PUT /job-work/{id}", "Updated job-work")
-            else:
-                log_fail("Manufacturing: PUT /job-work/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: PUT /job-work/{id}", e)
+        print("\n[F2] POST /api/auth/login")
+        resp = requests.post(f"{API_BASE}/auth/login", json={
+            "email": f_email,
+            "password": f_password
+        })
+        log_test("F2.1: Login with valid creds returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
         
-        # DELETE
-        try:
-            resp = session.delete(f"{API_URL}/manufacturing/job-work/{jw_id}", timeout=10)
-            if resp.status_code == 200:
-                log_pass("Manufacturing: DELETE /job-work/{id}", "Deleted job-work")
-            else:
-                log_fail("Manufacturing: DELETE /job-work/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: DELETE /job-work/{id}", e)
-    
-    return True
-
-
-def test_manufacturing_wastage():
-    """6. Manufacturing: Wastage CRUD"""
-    wst_id = None
-    
-    # POST
-    try:
-        resp = session.post(
-            f"{API_URL}/manufacturing/wastage",
-            json={
-                "qty": 5,
-                "unit": "piece",
-                "reason": "Cutting error",
-                "date": "2026-01-01",
-                "value": 600
-            },
-            timeout=10
-        )
+        resp = requests.post(f"{API_BASE}/auth/login", json={
+            "email": f_email,
+            "password": "WrongPassword@123"
+        })
+        log_test("F2.2: Login with wrong password returns 401", resp.status_code == 401,
+                 f"Got {resp.status_code}")
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data["id"].startswith("wst_"):
-                wst_id = data["id"]
-                log_pass("Manufacturing: POST /wastage", f"Created wastage {wst_id}")
-            else:
-                log_fail("Manufacturing: POST /wastage", "ID missing or wrong format", resp)
-                return False
-        else:
-            log_fail("Manufacturing: POST /wastage", f"Expected 200, got {resp.status_code}", resp)
-            return False
-    except Exception as e:
-        log_error("Manufacturing: POST /wastage", e)
-        return False
+        print("\n[F3] GET /api/ (root)")
+        resp = requests.get(f"{API_BASE}/")
+        log_test("F3.1: Root endpoint returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+        
+        print("\n[F4] GET /api/manufacturing/fabrics")
+        resp = requests.get(f"{API_BASE}/manufacturing/fabrics", headers=f_headers)
+        log_test("F4.1: Manufacturing fabrics returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+        
+        print("\n[F5] GET /api/reports/trial-balance")
+        resp = requests.get(f"{API_BASE}/reports/trial-balance?from=2026-01-01&to=2026-12-31",
+                           headers=f_headers)
+        log_test("F5.1: Trial balance returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+        
+        print("\n[F6] GET /api/warehouses")
+        resp = requests.get(f"{API_BASE}/warehouses", headers=f_headers)
+        log_test("F6.1: Warehouses list returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+        
+        print("\n[F7] POST /api/warehouses")
+        resp = requests.post(f"{API_BASE}/warehouses",
+                            headers=f_headers,
+                            json={"name": "Test WH", "is_default": True})
+        log_test("F7.1: Create warehouse returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+        
+        print("\n[F8] GET /api/audit-logs")
+        resp = requests.get(f"{API_BASE}/audit-logs", headers=f_headers)
+        log_test("F8.1: Audit logs returns 200", resp.status_code == 200,
+                 f"Got {resp.status_code}")
+
+# ============================================================================
+# SUITE G — LOG SANITIZATION
+# ============================================================================
+
+def test_suite_g():
+    print("\n" + "="*80)
+    print("SUITE G — LOG SANITIZATION")
+    print("="*80)
     
-    # GET
-    try:
-        resp = session.get(f"{API_URL}/manufacturing/wastage", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if "items" in data and "total" in data:
-                log_pass("Manufacturing: GET /wastage", f"Found {data['total']} wastage entries")
-            else:
-                log_fail("Manufacturing: GET /wastage", "Wrong response shape", resp)
-        else:
-            log_fail("Manufacturing: GET /wastage", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Manufacturing: GET /wastage", e)
+    print("\n[G1] No JWT tokens in logs")
     
-    # DELETE
-    if wst_id:
-        try:
-            resp = session.delete(f"{API_URL}/manufacturing/wastage/{wst_id}", timeout=10)
-            if resp.status_code == 200:
-                log_pass("Manufacturing: DELETE /wastage/{id}", "Deleted wastage")
-            else:
-                log_fail("Manufacturing: DELETE /wastage/{id}", f"Expected 200, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error("Manufacturing: DELETE /wastage/{id}", e)
+    # Make several authenticated requests
+    for i in range(3):
+        requests.get(f"{API_BASE}/rbac/me", headers=get_headers())
     
-    return True
-
-
-def test_manufacturing_dashboard():
-    """7. Manufacturing: Dashboard"""
+    # Read backend logs
     try:
-        resp = session.get(f"{API_URL}/manufacturing/dashboard", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["open_orders", "completed_orders", "delayed_orders", "total_boms", "total_fabrics", "wastage_value", "stage_load"]
-            if all(k in data for k in required_keys):
-                log_pass("Manufacturing: GET /dashboard", f"All keys present: {', '.join(required_keys)}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Manufacturing: GET /dashboard", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Manufacturing: GET /dashboard", f"Expected 200, got {resp.status_code}", resp)
+        with open("/var/log/supervisor/backend.err.log", "r") as f:
+            log_content = f.read()
+        
+        # Check for JWT patterns (eyJ... three-segment strings)
+        import re
+        jwt_pattern = r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+        jwt_matches = re.findall(jwt_pattern, log_content)
+        
+        log_test("G1.1: No raw JWT tokens in logs", len(jwt_matches) == 0,
+                 f"Found {len(jwt_matches)} JWT tokens in logs")
+        
+        # Check for Bearer <token> patterns
+        bearer_pattern = r'Bearer\s+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+        bearer_matches = re.findall(bearer_pattern, log_content)
+        
+        log_test("G1.2: No 'Bearer <full-token>' in logs", len(bearer_matches) == 0,
+                 f"Found {len(bearer_matches)} Bearer tokens in logs")
+        
     except Exception as e:
-        log_error("Manufacturing: GET /dashboard", e)
+        log_test("G1.1: No raw JWT tokens in logs", False, f"Could not read logs: {e}")
+        log_test("G1.2: No 'Bearer <full-token>' in logs", False, f"Could not read logs: {e}")
 
+# ============================================================================
+# MAIN
+# ============================================================================
 
-def test_reports_trial_balance():
-    """8. Reports: Trial Balance"""
-    try:
-        resp = session.get(f"{API_URL}/reports/trial-balance?from=2026-01-01&to=2026-12-31", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["from", "to", "debit_rows", "credit_rows", "debit_total", "credit_total", "difference"]
-            if all(k in data for k in required_keys):
-                log_pass("Reports: GET /trial-balance", f"Valid shape, debit_total={data['debit_total']}, credit_total={data['credit_total']}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /trial-balance", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /trial-balance", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /trial-balance", e)
-
-
-def test_reports_pnl():
-    """9. Reports: P&L"""
-    try:
-        resp = session.get(f"{API_URL}/reports/pnl?from=2026-01-01&to=2026-12-31", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["from", "to", "sales", "purchases", "gross_profit", "other_income", "expenses", "total_income", "total_expense", "net_profit"]
-            if all(k in data for k in required_keys):
-                log_pass("Reports: GET /pnl", f"Valid shape, net_profit={data['net_profit']}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /pnl", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /pnl", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /pnl", e)
-
-
-def test_reports_balance_sheet():
-    """10. Reports: Balance Sheet"""
-    try:
-        resp = session.get(f"{API_URL}/reports/balance-sheet?as_of=2026-12-31", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["as_of", "assets", "liabilities", "equity"]
-            if all(k in data for k in required_keys):
-                assets = data["assets"]
-                if "cash" in assets and "bank" in assets and "sundry_debtors" in assets and "total" in assets:
-                    log_pass("Reports: GET /balance-sheet", f"Valid shape, assets.total={assets['total']}, equity={data['equity']}")
-                else:
-                    log_fail("Reports: GET /balance-sheet", "Assets structure incomplete", resp)
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /balance-sheet", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /balance-sheet", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /balance-sheet", e)
-
-
-def test_reports_day_book():
-    """11. Reports: Day Book"""
-    try:
-        resp = session.get(f"{API_URL}/reports/day-book?on=2026-01-01", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["date", "transactions", "invoices", "bank_payments", "counts"]
-            if all(k in data for k in required_keys):
-                log_pass("Reports: GET /day-book", f"Valid shape, counts={data['counts']}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /day-book", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /day-book", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /day-book", e)
-
-
-def test_reports_cash_book():
-    """12. Reports: Cash Book"""
-    try:
-        resp = session.get(f"{API_URL}/reports/cash-book?from=2026-01-01&to=2026-12-31", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["from", "to", "rows", "total_receipts", "total_payments", "closing_balance"]
-            if all(k in data for k in required_keys):
-                log_pass("Reports: GET /cash-book", f"Valid shape, closing_balance={data['closing_balance']}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /cash-book", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /cash-book", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /cash-book", e)
-
-
-def test_reports_gstr1():
-    """13. Reports: GSTR-1"""
-    try:
-        resp = session.get(f"{API_URL}/reports/gstr-1?month=2026-01", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["month", "b2b", "b2c", "totals"]
-            if all(k in data for k in required_keys):
-                totals = data["totals"]
-                if "b2b" in totals and "b2c" in totals and "all" in totals:
-                    # Check sub-structure
-                    if all(k in totals["all"] for k in ["count", "taxable_value", "cgst", "sgst", "igst", "grand_total"]):
-                        log_pass("Reports: GET /gstr-1", f"Valid shape, totals.all.grand_total={totals['all']['grand_total']}")
-                    else:
-                        log_fail("Reports: GET /gstr-1", "totals.all structure incomplete", resp)
-                else:
-                    log_fail("Reports: GET /gstr-1", "totals structure incomplete", resp)
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /gstr-1", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /gstr-1", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /gstr-1", e)
-
-
-def test_reports_gstr3b():
-    """14. Reports: GSTR-3B"""
-    try:
-        resp = session.get(f"{API_URL}/reports/gstr-3b?month=2026-01", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            required_keys = ["month", "outward", "inward_itc", "net_tax_liability"]
-            if all(k in data for k in required_keys):
-                log_pass("Reports: GET /gstr-3b", f"Valid shape, net_tax_liability={data['net_tax_liability']}")
-            else:
-                missing = [k for k in required_keys if k not in data]
-                log_fail("Reports: GET /gstr-3b", f"Missing keys: {missing}", resp)
-        else:
-            log_fail("Reports: GET /gstr-3b", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Reports: GET /gstr-3b", e)
-
-
-def test_auth_required():
-    """15. Cross-cutting: Verify 401 without auth"""
-    endpoints = [
-        "/manufacturing/fabrics",
-        "/manufacturing/boms",
-        "/manufacturing/orders",
-        "/manufacturing/dashboard",
-        "/reports/trial-balance",
-        "/reports/pnl"
-    ]
+def main():
+    # Register test user
+    if not register_user():
+        print("❌ Failed to register test user. Aborting.")
+        return
     
-    # Create a session without auth
-    unauth_session = requests.Session()
+    # Run test suites
+    test_suite_a()
+    test_suite_b()
+    test_suite_c()
+    test_suite_d()
+    test_suite_e()
+    test_suite_f()
+    test_suite_g()
     
-    for endpoint in endpoints:
-        try:
-            resp = unauth_session.get(f"{API_URL}{endpoint}", timeout=10)
-            if resp.status_code == 401:
-                log_pass(f"Auth Required: {endpoint}", "Returns 401 without auth")
-            else:
-                log_fail(f"Auth Required: {endpoint}", f"Expected 401, got {resp.status_code}", resp)
-        except Exception as e:
-            log_error(f"Auth Required: {endpoint}", e)
-
-
-def test_existing_endpoints():
-    """16. Cross-cutting: Verify existing endpoints still work"""
-    # Already tested /auth/me above
-    
-    # Test root endpoint
-    try:
-        resp = session.get(f"{API_URL}/", timeout=10)
-        if resp.status_code == 200:
-            log_pass("Existing: GET /api/", "Root endpoint works")
-        else:
-            log_fail("Existing: GET /api/", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("Existing: GET /api/", e)
-
-
-def test_gzip_encoding():
-    """17. Cross-cutting: Verify GZip encoding on large response"""
-    try:
-        # Day-book might return large response
-        resp = session.get(f"{API_URL}/reports/day-book?on=2026-01-01", timeout=10)
-        if resp.status_code == 200:
-            content_encoding = resp.headers.get("Content-Encoding", "")
-            # Note: GZip might not be applied if response is too small
-            if content_encoding == "gzip":
-                log_pass("GZip: Content-Encoding", "Response is gzipped")
-            else:
-                # This is not a failure - GZip only applies to responses > 500 bytes
-                log_pass("GZip: Content-Encoding", f"Response encoding: {content_encoding or 'none'} (GZip applies only to large responses)")
-        else:
-            log_fail("GZip: Content-Encoding", f"Expected 200, got {resp.status_code}", resp)
-    except Exception as e:
-        log_error("GZip: Content-Encoding", e)
-
-
-def print_summary():
-    """Print test summary"""
+    # Summary
     print("\n" + "="*80)
     print("TEST SUMMARY")
     print("="*80)
-    print(f"✅ PASSED: {len(results['passed'])}")
-    print(f"❌ FAILED: {len(results['failed'])}")
-    print(f"💥 ERRORS: {len(results['errors'])}")
+    print(f"✅ Passed: {passed}")
+    print(f"❌ Failed: {failed}")
+    print(f"📊 Total:  {passed + failed}")
+    print(f"📈 Success Rate: {passed / (passed + failed) * 100:.1f}%")
+    
+    if errors:
+        print("\n" + "="*80)
+        print("FAILED TESTS DETAILS")
+        print("="*80)
+        for err in errors:
+            print(f"  • {err}")
+    
+    # Check backend logs for 500 errors
+    print("\n" + "="*80)
+    print("BACKEND LOG CHECK")
     print("="*80)
+    try:
+        with open("/var/log/supervisor/backend.err.log", "r") as f:
+            log_lines = f.readlines()
+        
+        error_500_lines = [line for line in log_lines if "500" in line or "Internal Server Error" in line]
+        
+        if error_500_lines:
+            print(f"❌ Found {len(error_500_lines)} lines with 500 errors:")
+            for line in error_500_lines[-10:]:  # Show last 10
+                print(f"   {line.strip()}")
+        else:
+            print("✅ No 500 errors found in backend logs")
+    except Exception as e:
+        print(f"⚠️  Could not check backend logs: {e}")
     
-    if results['failed']:
-        print("\nFAILED TESTS:")
-        for fail in results['failed']:
-            print(f"  - {fail['test']}: {fail['reason']}")
-    
-    if results['errors']:
-        print("\nERROR TESTS:")
-        for err in results['errors']:
-            print(f"  - {err['test']}: {err['error']}")
-    
-    print("\n")
-    
-    # Return exit code
-    return 0 if (len(results['failed']) == 0 and len(results['errors']) == 0) else 1
-
-
-def main():
+    print("\n" + "="*80)
+    print("SESSION 5 SECURITY HARDENING TEST COMPLETE")
     print("="*80)
-    print("APKA MUNIM BACKEND TEST SUITE")
-    print("Foundation Fix + Manufacturing + Accounting Reports")
-    print("="*80)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Test User: {TEST_EMAIL}")
-    print("="*80)
-    print()
-    
-    # 1. Auth setup
-    if not test_auth_register():
-        print("\n❌ Auth registration failed. Cannot proceed with other tests.")
-        return 1
-    
-    if not test_auth_me():
-        print("\n❌ Auth verification failed. Cannot proceed with other tests.")
-        return 1
-    
-    print()
-    
-    # 2. Manufacturing tests
-    print("--- MANUFACTURING TESTS ---")
-    test_manufacturing_fabrics()
-    test_manufacturing_boms()
-    test_manufacturing_orders()
-    test_manufacturing_job_work()
-    test_manufacturing_wastage()
-    test_manufacturing_dashboard()
-    print()
-    
-    # 3. Reports tests
-    print("--- ACCOUNTING REPORTS TESTS ---")
-    test_reports_trial_balance()
-    test_reports_pnl()
-    test_reports_balance_sheet()
-    test_reports_day_book()
-    test_reports_cash_book()
-    test_reports_gstr1()
-    test_reports_gstr3b()
-    print()
-    
-    # 4. Cross-cutting tests
-    print("--- CROSS-CUTTING TESTS ---")
-    test_auth_required()
-    test_existing_endpoints()
-    test_gzip_encoding()
-    print()
-    
-    # Summary
-    return print_summary()
-
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
