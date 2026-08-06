@@ -18,6 +18,7 @@ from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -5765,6 +5766,25 @@ async def healthz():
 
 
 app.include_router(api)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds baseline security response headers. API-only backend (no HTML
+    templates rendered here), so this intentionally skips CSP, which the
+    frontend's own hosting config should own instead."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Only meaningful over HTTPS, which is enforced in production anyway.
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
