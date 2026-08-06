@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PrivacyProvider } from './context/PrivacyContext';
@@ -10,49 +10,59 @@ import { LanguageProvider } from './context/LanguageContext';
 import Layout from './components/Layout';
 import BillingLayout from './components/billing/BillingLayout';
 
-import Landing from './pages/Landing';
-import Dashboard from './pages/Dashboard';
-import Transactions from './pages/Transactions';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Accounts from './pages/Accounts';
-import Udhaar from './pages/Udhaar';
-import Parties from './pages/Parties';
-import Products from './pages/Products';
-import Budgets from './pages/Budgets';
-import Goals from './pages/Goals';
-import Recurring from './pages/Recurring';
-import Subscriptions from './pages/Subscriptions';
-import Ledgers from './pages/Ledgers';
-import Reports from './pages/Reports';
-import BillingReports from './pages/BillingReports';
-import Investments from './pages/Investments';
-import TaxEstimator from './pages/TaxEstimator';
-import WhatIf from './pages/WhatIf';
-import Warranties from './pages/Warranties';
-import KidsMoney from './pages/KidsMoney';
-import Splits from './pages/Splits';
-import Invoices from './pages/Invoices';
-import InvoiceCreate from './pages/InvoiceCreate';
-import RecurringInvoices from './pages/RecurringInvoices';
-import InvoiceTemplates from './pages/InvoiceTemplates';
-import BankPayments from './pages/BankPayments';
-import WebhookSetup from './pages/WebhookSetup';
-import Premium from './pages/Premium';
-import Settings from './pages/Settings';
-import Privacy from './pages/Privacy';
-import Terms from './pages/Terms';
-import PublicDeleteAccount from './pages/PublicDeleteAccount';
+// Route-level code splitting: each page is its own chunk, fetched on
+// navigation instead of all 40+ pages shipping in the initial bundle.
+const Landing = lazy(() => import('./pages/Landing'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Transactions = lazy(() => import('./pages/Transactions'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Accounts = lazy(() => import('./pages/Accounts'));
+const Udhaar = lazy(() => import('./pages/Udhaar'));
+const Parties = lazy(() => import('./pages/Parties'));
+const Products = lazy(() => import('./pages/Products'));
+const Budgets = lazy(() => import('./pages/Budgets'));
+const Goals = lazy(() => import('./pages/Goals'));
+const Recurring = lazy(() => import('./pages/Recurring'));
+const Subscriptions = lazy(() => import('./pages/Subscriptions'));
+const Ledgers = lazy(() => import('./pages/Ledgers'));
+const Reports = lazy(() => import('./pages/Reports'));
+const BillingReports = lazy(() => import('./pages/BillingReports'));
+const Investments = lazy(() => import('./pages/Investments'));
+const TaxEstimator = lazy(() => import('./pages/TaxEstimator'));
+const WhatIf = lazy(() => import('./pages/WhatIf'));
+const Warranties = lazy(() => import('./pages/Warranties'));
+const KidsMoney = lazy(() => import('./pages/KidsMoney'));
+const Splits = lazy(() => import('./pages/Splits'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const InvoiceCreate = lazy(() => import('./pages/InvoiceCreate'));
+const RecurringInvoices = lazy(() => import('./pages/RecurringInvoices'));
+const InvoiceTemplates = lazy(() => import('./pages/InvoiceTemplates'));
+const BankPayments = lazy(() => import('./pages/BankPayments'));
+const WebhookSetup = lazy(() => import('./pages/WebhookSetup'));
+const Premium = lazy(() => import('./pages/Premium'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+const Terms = lazy(() => import('./pages/Terms'));
+const PublicDeleteAccount = lazy(() => import('./pages/PublicDeleteAccount'));
 
-import BillingDashboardWorkspace from './pages/billing/BillingDashboardWorkspace';
-import SalesReturns from './pages/billing/SalesReturns';
-import CustomerLedger from './pages/billing/CustomerLedger';
-import SupplierLedger from './pages/billing/SupplierLedger';
-import InventoryAdjustments from './pages/billing/InventoryAdjustments';
-import PartyProfile from './pages/billing/PartyProfile';
-import PurchaseBills from './pages/billing/PurchaseBills';
+const BillingDashboardWorkspace = lazy(() => import('./pages/billing/BillingDashboardWorkspace'));
+const SalesReturns = lazy(() => import('./pages/billing/SalesReturns'));
+const CustomerLedger = lazy(() => import('./pages/billing/CustomerLedger'));
+const SupplierLedger = lazy(() => import('./pages/billing/SupplierLedger'));
+const InventoryAdjustments = lazy(() => import('./pages/billing/InventoryAdjustments'));
+const PartyProfile = lazy(() => import('./pages/billing/PartyProfile'));
+const PurchaseBills = lazy(() => import('./pages/billing/PurchaseBills'));
+
+function RouteFallback() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
+      <div className="animate-pulse text-sm text-muted-foreground">Loading…</div>
+    </div>
+  );
+}
 
 function ProtectedMainRoute({ children }) {
   const { user } = useAuth();
@@ -87,6 +97,7 @@ export default function App() {
         <DashboardPrefsProvider>
         <PrivacyProvider>
           <Router>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -154,6 +165,7 @@ export default function App() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </Suspense>
           </Router>
         </PrivacyProvider>
         </DashboardPrefsProvider>
