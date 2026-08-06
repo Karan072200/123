@@ -62,13 +62,31 @@ async def audit_log(
             "action": action,             # 'create' | 'update' | 'delete' | 'login' | ...
             "entity_type": entity_type,   # 'invoice' | 'party' | 'product' | ...
             "entity_id": entity_id,
-            "before": before,
-            "after": after,
+            "before": _strip_ids(before),
+            "after": _strip_ids(after),
             "meta": meta or {},
         })
     except Exception:
         # Never let audit-log failures break the actual operation.
         pass
+
+
+def _strip_ids(obj):
+    """Recursively drop Mongo ObjectId + `_id` keys so audit_logs stays JSON-serialisable."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return {k: _strip_ids(v) for k, v in obj.items() if k != "_id"}
+    if isinstance(obj, list):
+        return [_strip_ids(x) for x in obj]
+    # bson.ObjectId is not iterable and not JSON serialisable — coerce to str
+    try:
+        from bson import ObjectId
+        if isinstance(obj, ObjectId):
+            return str(obj)
+    except Exception:
+        pass
+    return obj
 
 
 def sanitize(doc: dict | None) -> dict | None:

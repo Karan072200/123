@@ -60,7 +60,14 @@ async def list_roles(user: dict = Depends(get_current_user)):
     dependencies=[Depends(require_permission("user.change_role"))],
 )
 async def change_role(body: ChangeRoleIn, user: dict = Depends(get_current_user)):
-    target = await db.users.find_one({"email": body.user_email})
+    # Emails are always stored lower-case (see server.py register/login) —
+    # match that when looking up.
+    target_email = str(body.user_email).lower()
+    target = await db.users.find_one({"email": target_email})
+    if not target:
+        # Fall back to case-insensitive regex once, in case of legacy uppercase writes.
+        import re as _re
+        target = await db.users.find_one({"email": {"$regex": f"^{_re.escape(target_email)}$", "$options": "i"}})
     if not target:
         raise HTTPException(404, "User not found")
     # Only same-ledger users can be edited (unless super_admin)
@@ -78,7 +85,7 @@ async def change_role(body: ChangeRoleIn, user: dict = Depends(get_current_user)
         before={"role": before},
         after={"role": body.role.value},
     )
-    return {"email": body.user_email, "role": body.role.value}
+    return {"email": target_email, "role": body.role.value}
 
 
 @router.post("/check-permission")
