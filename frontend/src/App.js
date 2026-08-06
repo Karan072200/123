@@ -60,6 +60,11 @@ const PurchaseBills = lazy(() => import('./pages/billing/PurchaseBills'));
 const Manufacturing = lazy(() => import('./pages/Manufacturing'));
 const AccountingReports = lazy(() => import('./pages/AccountingReports'));
 
+// Session 4: Multi Warehouse + Security + Barcode Billing
+const Warehouses = lazy(() => import('./pages/Warehouses'));
+const BarcodeBilling = lazy(() => import('./pages/BarcodeBilling'));
+const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
+
 function RouteFallback() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
@@ -174,6 +179,18 @@ export default function App() {
               {/* Phase 5 — Accounting Reports (Trial Balance / P&L / Balance Sheet / GST) */}
               <Route path="/accounting-reports" element={<ProtectedMainRoute><AccountingReports /></ProtectedMainRoute>} />
               <Route path="/billing/accounting-reports" element={<ProtectedBillingRoute><AccountingReports /></ProtectedBillingRoute>} />
+
+              {/* Phase 7 — Multi-warehouse inventory */}
+              <Route path="/warehouses" element={<ProtectedMainRoute><Warehouses /></ProtectedMainRoute>} />
+              <Route path="/billing/warehouses" element={<ProtectedBillingRoute><Warehouses /></ProtectedBillingRoute>} />
+
+              {/* Phase 6 — Barcode Billing (POS with USB scanner + thermal print + WhatsApp) */}
+              <Route path="/billing/pos" element={<ProtectedBillingRoute><BarcodeBilling /></ProtectedBillingRoute>} />
+              <Route path="/pos" element={<ProtectedMainRoute><BarcodeBilling /></ProtectedMainRoute>} />
+
+              {/* Phase 3 — Security & Sessions (TOTP 2FA + refresh tokens + audit trail) */}
+              <Route path="/security" element={<ProtectedMainRoute><SecuritySettings /></ProtectedMainRoute>} />
+              <Route path="/billing/security" element={<ProtectedBillingRoute><SecuritySettings /></ProtectedBillingRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

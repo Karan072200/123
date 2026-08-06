@@ -19,6 +19,10 @@ import {
   ArrowLeftRight,
   ShieldAlert,
   Bot,
+  Warehouse,
+  Barcode,
+  Shield,
+  Factory,
   X,
 } from "lucide-react";
 
@@ -128,8 +132,26 @@ const sections = [
   {
     key: "manufacturing",
     label: "Manufacturing",
-    icon: BarChart3,
+    icon: Factory,
     to: "/billing/manufacturing",
+  },
+  {
+    key: "warehouses",
+    label: "Warehouses",
+    icon: Warehouse,
+    to: "/billing/warehouses",
+  },
+  {
+    key: "pos",
+    label: "Barcode POS",
+    icon: Barcode,
+    to: "/billing/pos",
+  },
+  {
+    key: "security",
+    label: "Security & Sessions",
+    icon: Shield,
+    to: "/billing/security",
   },
   {
     key: "settings",

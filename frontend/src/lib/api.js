@@ -8,6 +8,49 @@ export const http = axios.create({
   withCredentials: true,
 });
 
+/**
+ * Refresh-token interceptor (Phase 3 Security Hardening).
+ *
+ * Whenever the server returns 401 on an authenticated request, try to swap
+ * the stored refresh token for a new access cookie once, then replay the
+ * original request. If refresh fails, fall through to the caller so login
+ * flows still see the 401.
+ *
+ * The refresh token is stored under `apka-refresh` in localStorage and is
+ * only set after a user explicitly opts in via /security → "New Refresh
+ * Session". Existing cookie-only clients keep working unchanged.
+ */
+const REFRESH_KEY = "apka-refresh";
+let _refreshing = null;
+
+http.interceptors.response.use(
+  (r) => r,
+  async (error) => {
+    const original = error.config || {};
+    const refreshToken = typeof window !== "undefined" ? window.localStorage?.getItem(REFRESH_KEY) : null;
+    const alreadyRetried = original._retryAuth;
+    const isAuthRoute = (original.url || "").includes("/auth/refresh") || (original.url || "").includes("/auth/login") || (original.url || "").includes("/auth/register");
+    if (error?.response?.status === 401 && refreshToken && !alreadyRetried && !isAuthRoute) {
+      try {
+        if (!_refreshing) {
+          _refreshing = axios.post(`${API}/auth/refresh`, { refresh_token: refreshToken }, { withCredentials: true });
+        }
+        const { data } = await _refreshing;
+        _refreshing = null;
+        if (data?.refresh_token) {
+          window.localStorage.setItem(REFRESH_KEY, data.refresh_token);
+        }
+        original._retryAuth = true;
+        return http(original);
+      } catch (e) {
+        _refreshing = null;
+        window.localStorage.removeItem(REFRESH_KEY);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const CURRENCIES = [
   { code: "INR", symbol: "₹", label: "Indian Rupee" },
   { code: "USD", symbol: "$", label: "US Dollar" },

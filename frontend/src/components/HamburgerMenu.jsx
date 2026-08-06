@@ -44,6 +44,10 @@ import {
   IndianRupee,
   HelpCircle,
   ShieldQuestion,
+  Warehouse,
+  Barcode,
+  Shield,
+  Factory,
 } from 'lucide-react';
 
 export default function HamburgerMenu({ isOpen, onClose }) {
@@ -158,11 +162,30 @@ export default function HamburgerMenu({ isOpen, onClose }) {
     {
       title: 'MANUFACTURING (GARMENT ERP)',
       items: [
-        { label: 'Manufacturing Dashboard', path: '/manufacturing', icon: BarChart3 },
+        { label: 'Manufacturing Dashboard', path: '/manufacturing', icon: Factory },
         { label: 'BOM & Costing', path: '/manufacturing', icon: FileText },
         { label: 'Production Orders', path: '/manufacturing', icon: Boxes },
         { label: 'Fabric Inventory', path: '/manufacturing', icon: Boxes },
         { label: 'Job Work', path: '/manufacturing', icon: Receipt },
+      ],
+    },
+    {
+      title: 'WAREHOUSES & POS',
+      items: [
+        { label: 'Warehouses', path: '/warehouses', icon: Warehouse },
+        { label: 'Stock Levels', path: '/warehouses', icon: Boxes },
+        { label: 'Batches (Expiry)', path: '/warehouses', icon: Package },
+        { label: 'Serial Numbers', path: '/warehouses', icon: QrCode },
+        { label: 'Stock Transfers', path: '/warehouses', icon: ArrowUpDown },
+        { label: 'Barcode Billing (POS)', path: '/pos', icon: Barcode },
+      ],
+    },
+    {
+      title: 'ACCOUNT & SECURITY',
+      items: [
+        { label: 'Security & 2FA', path: '/security', icon: Shield },
+        { label: 'Audit Trail', path: '/security', icon: History },
+        { label: 'Active Sessions', path: '/security', icon: ShieldCheck },
       ],
     },
     {

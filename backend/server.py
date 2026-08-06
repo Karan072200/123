@@ -5825,6 +5825,20 @@ try:
 except Exception as e:
     logging.warning(f"Accounting-reports router not loaded: {e}")
 
+try:
+    from routers.security import router as security_router  # noqa: E402
+    app.include_router(security_router)
+    logger.info("Security router mounted at /api (refresh tokens + TOTP 2FA + audit logs)")
+except Exception as e:
+    logging.warning(f"Security router not loaded: {e}")
+
+try:
+    from routers.warehouses import router as warehouses_router  # noqa: E402
+    app.include_router(warehouses_router)
+    logger.info("Warehouses router mounted at /api/warehouses")
+except Exception as e:
+    logging.warning(f"Warehouses router not loaded: {e}")
+
 
 @app.on_event("startup")
 async def _startup():
@@ -5892,6 +5906,25 @@ async def _startup():
         await db.audit_logs.create_index([("owner_id", 1), ("at", -1)])
         await db.audit_logs.create_index([("user_id", 1), ("at", -1)])
         await db.audit_logs.create_index([("entity_type", 1), ("entity_id", 1)])
+
+        # ----- Session 3: Security + Warehouses + Refresh tokens -----
+        await db.refresh_tokens.create_index([("user_id", 1), ("revoked", 1)])
+        await db.refresh_tokens.create_index([("token_hash", 1)], unique=True)
+        try:
+            # TTL: auto-purge revoked/expired refresh tokens 30 days after expiry
+            await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=60 * 60 * 24 * 30)
+        except Exception:
+            pass
+        await db.warehouses.create_index([("owner_id", 1), ("is_default", 1)])
+        await db.stock_levels.create_index([("owner_id", 1), ("warehouse_id", 1), ("product_id", 1), ("batch_id", 1)], unique=True)
+        await db.stock_levels.create_index([("owner_id", 1), ("product_id", 1)])
+        await db.batches.create_index([("owner_id", 1), ("product_id", 1)])
+        await db.batches.create_index([("owner_id", 1), ("expiry_date", 1)])
+        await db.serials.create_index([("owner_id", 1), ("serial_no", 1)], unique=True)
+        await db.serials.create_index([("owner_id", 1), ("product_id", 1), ("status", 1)])
+        await db.stock_transfers.create_index([("owner_id", 1), ("status", 1)])
+        await db.stock_transfers.create_index([("owner_id", 1), ("transfer_date", -1)])
+        await db.stock_adjustments.create_index([("owner_id", 1), ("at", -1)])
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
 
